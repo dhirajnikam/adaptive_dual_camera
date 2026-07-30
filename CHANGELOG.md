@@ -1,3 +1,8 @@
+## 0.0.2
+
+* Low-RAM (Android Go) devices always take the sequential path and cap stills
+  at ~8MP, so a second camera pipeline never competes for memory.
+
 ## 0.0.1
 
 * `DualCameraController` — live front/back preview textures, `capturePhoto()`
@@ -19,5 +24,3 @@
 * `DualStorage` — captures land in the cache directory by default; set a
   `directory` and/or `nameBuilder` to have them filed automatically.
 * `AdaptiveDualCamera.capture()` / `.record()` for one-shot use without a preview.
-* Low-RAM (Android Go) devices always take the sequential path and cap stills
-  at ~8MP, so a second camera pipeline never competes for memory.
