@@ -1,6 +1,6 @@
 name: adaptive_dual_camera
 description: "Front and back photos and video behind one API — simultaneously where the hardware allows it, sequentially everywhere else, with a customisable dual preview."
-version: 0.0.2
+version: 0.0.3
 homepage: https://github.com/dhirajnikam/adaptive_dual_camera
 repository: https://github.com/dhirajnikam/adaptive_dual_camera
 issue_tracker: https://github.com/dhirajnikam/adaptive_dual_camera/issues

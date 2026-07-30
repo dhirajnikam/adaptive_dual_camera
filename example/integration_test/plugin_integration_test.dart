@@ -30,4 +30,33 @@ void main() {
     expect(controller.capturePhoto(), throwsStateError);
     expect(controller.status, DualCameraStatus.uninitialized);
   });
+
+  testWidgets('initialize opens the cameras and dispose releases them', (
+    tester,
+  ) async {
+    // Needs a pre-granted camera permission (adb shell pm grant …); skips
+    // cleanly on devices that haven't, so CI without a grant still passes.
+    final controller = DualCameraController();
+
+    try {
+      await controller.initialize();
+    } on Object catch (e) {
+      await controller.dispose();
+      final denied =
+          e.toString().contains('permission_denied') ||
+          e.toString().contains('no_camera');
+      if (denied) {
+        markTestSkipped('Camera permission not granted on this device.');
+        return;
+      }
+      rethrow;
+    }
+
+    expect(controller.status, DualCameraStatus.ready);
+    expect(controller.mode, isNotNull);
+    expect(controller.feedFor(controller.activeCamera), isNotNull);
+
+    await controller.dispose();
+    expect(controller.status, DualCameraStatus.disposed);
+  });
 }

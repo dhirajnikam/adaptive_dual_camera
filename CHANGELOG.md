@@ -1,3 +1,11 @@
+## 0.0.3
+
+* Fix `initialize()` throwing `Can't create handler inside thread … Looper.prepare()`
+  on Android: Flutter's texture registry must be used from the platform main
+  thread, and the plugin was calling it from its worker. Texture create/release
+  now hop to the main thread; an integration test covers the full
+  initialize → preview → dispose cycle on a device.
+
 ## 0.0.2
 
 * Low-RAM (Android Go) devices always take the sequential path and cap stills

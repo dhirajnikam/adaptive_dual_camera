@@ -232,6 +232,21 @@ class AdaptiveDualCameraPlugin :
     private fun requireSession(): Session =
         session ?: throw CameraError("not_initialized", "initialize() has not been called.")
 
+    /**
+     * Runs [block] on the platform main thread and blocks for the result.
+     *
+     * The texture registry insists on it: Flutter's surface-texture entry
+     * builds a `Handler()` for the current thread and its frame callback must
+     * land on the UI thread, so creating or releasing one anywhere else throws.
+     */
+    private fun <T : Any> onMain(block: () -> T): T {
+        if (Looper.myLooper() == Looper.getMainLooper()) return block()
+        val slot = ArrayBlockingQueue<Any>(1)
+        main.post { slot.offer(runCatching(block).fold({ it }, { it })) }
+        @Suppress("UNCHECKED_CAST")
+        return await(slot, OPEN_TIMEOUT_MS, "waiting for the platform thread") as T
+    }
+
     // --- permission ---------------------------------------------------------
 
     private fun granted(permission: String) =
@@ -518,7 +533,7 @@ class AdaptiveDualCameraPlugin :
             runCatching { if (recording.isNotEmpty()) stopRecording() }
             rigs.values.forEach { it.close() }
             rigs.clear()
-            entries.values.forEach { it.release() }
+            entries.values.forEach { entry -> onMain { entry.release() } }
             entries.clear()
         }
 
@@ -536,7 +551,7 @@ class AdaptiveDualCameraPlugin :
 
         private fun start(camera: String) {
             val id = idOf(camera)
-            val entry = entries.getOrPut(camera) { textureRegistry.createSurfaceTexture() }
+            val entry = entries.getOrPut(camera) { onMain { textureRegistry.createSurfaceTexture() } }
             rigs[camera] = Rig(camera, id, entry).also { it.open() }
         }
 
