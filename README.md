@@ -293,6 +293,9 @@ Requires iOS 13.0.
 - Simultaneous photos are capped at 1440p (Android) or the largest multi-cam
   format (iOS) — a hardware constraint of running two cameras. Sequential
   photos go up to ~12MP. Video is 720p on both paths.
+- **Low-RAM (Android Go) devices always run sequential**, even when the
+  hardware advertises a concurrent pair — a second open camera costs tens of
+  MB — and photos are capped at ~8MP. Preview stays 720p everywhere.
 - Both shutters in simultaneous mode fire back to back, a few milliseconds
   apart, not on a shared hardware trigger.
 - Preview rotation assumes a portrait-locked UI. Wrap `DualCameraFeed` in your

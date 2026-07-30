@@ -14,14 +14,16 @@ import 'package:integration_test/integration_test.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('isSimultaneousSupported answers without throwing',
-      (tester) async {
+  testWidgets('isSimultaneousSupported answers without throwing', (
+    tester,
+  ) async {
     final supported = await AdaptiveDualCamera().isSimultaneousSupported();
     expect(supported, isA<bool>());
   });
 
-  testWidgets('the controller refuses to capture before initialize',
-      (tester) async {
+  testWidgets('the controller refuses to capture before initialize', (
+    tester,
+  ) async {
     final controller = DualCameraController();
     addTearDown(controller.dispose);
 

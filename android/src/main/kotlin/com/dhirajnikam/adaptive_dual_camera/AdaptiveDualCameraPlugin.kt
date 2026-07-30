@@ -3,6 +3,7 @@ package com.dhirajnikam.adaptive_dual_camera
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -76,6 +77,11 @@ class AdaptiveDualCameraPlugin :
         // sensor maximum — keeps the fallback fast. Raise if quality matters more.
         val SEQUENTIAL_JPEG_MAX = Size(4000, 3000)
 
+        // ponytail: 8MP still ceiling on low-RAM (Android Go) devices — a full
+        // 12MP pipeline costs the HAL tens of MB per buffer. Raise if Go-device
+        // photo quality ever matters more than headroom.
+        val LOW_RAM_JPEG_MAX = Size(3264, 2448)
+
         const val VIDEO_BITRATE = 6_000_000
         const val VIDEO_FPS = 30
 
@@ -105,6 +111,11 @@ class AdaptiveDualCameraPlugin :
 
     /** Runs camera callbacks off the worker thread so blocking helpers can't deadlock. */
     private val callbackExecutor = Executor { cameraHandler?.post(it) }
+
+    /** Android Go and friends: never hold two camera pipelines, cap stills lower. */
+    private val lowRam by lazy {
+        (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).isLowRamDevice
+    }
 
     // --- plugin lifecycle ---------------------------------------------------
 
@@ -284,7 +295,9 @@ class AdaptiveDualCameraPlugin :
 
     /** A back/front camera id pair the device can hold open at once, or null. */
     private fun concurrentPair(): Pair<String, String>? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        // A second open camera costs tens of MB of HAL buffers — on a low-RAM
+        // device the sequential path is the safe one even when a pair exists.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || lowRam) return null
         return try {
             cameraManager.concurrentCameraIds.firstNotNullOfOrNull { ids ->
                 val back = ids.firstOrNull { facing(it) == CameraCharacteristics.LENS_FACING_BACK }
@@ -557,7 +570,11 @@ class AdaptiveDualCameraPlugin :
             pickSize(
                 id,
                 ImageFormat.JPEG,
-                if (concurrentPair() != null) CONCURRENT_JPEG_MAX else SEQUENTIAL_JPEG_MAX,
+                when {
+                    lowRam -> LOW_RAM_JPEG_MAX
+                    concurrentPair() != null -> CONCURRENT_JPEG_MAX
+                    else -> SEQUENTIAL_JPEG_MAX
+                },
             )
         private val videoSize = pickSize(id, MediaRecorder::class.java, VIDEO_MAX)
 
