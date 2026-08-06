@@ -1,3 +1,37 @@
+## 0.1.0
+
+* **Complete rewrite — breaking.** The method-channel plugin and all native
+  Kotlin/Swift code are gone. The package is now pure Dart on top of the
+  official `camera` and `geolocator` plugins.
+* New guided flow `GuidedDualCaptureFlow`: prompts the user for a front
+  (selfie) photo, then a back photo, then attaches lat/long + timestamp and
+  returns a `DualShotResult`.
+* New `DualShotView`: renders the result as
+  Column[back photo, Row[front photo, lat/long/timestamp]].
+* All user-visible strings are overridable via `DualCaptureLabels` for
+  localization.
+* Camera permission denial shows an in-flow retry screen; location denial
+  degrades to a null lat/long instead of failing the capture.
+* Tuned for old and low-RAM devices: one camera controller at a time,
+  medium-resolution default, no audio, camera released on backgrounding,
+  low-accuracy location with a 10-second cap.
+
+## 0.0.4
+
+* Fix crashes when switching the live camera and previews drawn sideways,
+  mirrored wrong or stretched. The Android preview now streams into
+  `SurfaceProducer` (the engine's supported external-texture API, Impeller
+  included) instead of the deprecated `createSurfaceTexture()`. Each feed
+  reports `handlesRotation`; `DualCameraFeed` only rotates/mirrors in Dart
+  when the engine hands out raw sensor-oriented buffers, so frames are never
+  double-transformed.
+* Closing a camera no longer rebuilds a capture session on the way out —
+  switching cameras is faster and no longer races the camera HAL.
+* The preview survives backgrounding: when the engine tears the preview
+  surface down the camera stops streaming, and it reconfigures onto the fresh
+  surface when the app returns.
+* Requires Flutter 3.27 or newer.
+
 ## 0.0.3
 
 * Fix `initialize()` throwing `Can't create handler inside thread … Looper.prepare()`

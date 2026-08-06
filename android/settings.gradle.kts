@@ -1,1 +1,0 @@
-rootProject.name = "adaptive_dual_camera"

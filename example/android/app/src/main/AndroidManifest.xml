@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- CAMERA comes from the plugin's manifest. RECORD_AUDIO is opt-in: the
-         plugin deliberately doesn't declare it, so photo-only apps aren't
-         listed as requesting the microphone. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- CAMERA comes from the camera plugin's manifest. Location is needed
+         for the lat/long stamp on each capture. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <application
         android:label="adaptive_dual_camera_example"
         android:name="${applicationName}"

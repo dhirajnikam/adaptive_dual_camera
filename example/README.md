@@ -1,17 +1,21 @@
 # adaptive_dual_camera_example
 
-Demonstrates how to use the adaptive_dual_camera plugin.
+Demonstrates the full `adaptive_dual_camera` API:
 
-## Getting Started
+- **Guided capture** — `GuidedDualCaptureFlow` prompts for a front (selfie)
+  photo, then a back photo, then stamps location + timestamp.
+- **Localization** — a language toggle (English / हिन्दी) swaps the
+  `DualCaptureLabels` object; every visible string changes.
+- **Old-device tuning** — a resolution picker (`low` / `medium` / `high`)
+  passed straight to the flow.
+- **Result display** — `DualShotView` renders
+  Column[back photo, Row[front photo, lat/long/timestamp]], with a retake
+  button.
+- **Error handling** — capture errors surface in a SnackBar; a denied camera
+  permission shows the flow's built-in retry screen.
 
-This project is a starting point for a Flutter application.
+Run it on a real device (cameras don't exist in emulators the same way):
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter run
+```
