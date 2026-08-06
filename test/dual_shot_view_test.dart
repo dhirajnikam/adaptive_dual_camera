@@ -34,22 +34,33 @@ void main() {
 
   tearDown(() => dir.deleteSync(recursive: true));
 
-  testWidgets('lays out back photo above front photo + geo row',
+  testWidgets('shows back photo full-bleed, selfie card, map and details',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(home: Scaffold(body: DualShotView(result: result))),
     );
+    await tester.pump(); // let the map tile request fail into its fallback
 
     expect(find.text('18.520430, 73.856743'), findsOneWidget);
     expect(find.text('2026-08-06 14:05'), findsOneWidget);
+    expect(find.byType(MapThumbnail), findsOneWidget);
 
-    // Back photo (in the Column, above) must sit higher than the front
-    // photo (inside the footer Row).
-    final images = tester.widgetList<Image>(find.byType(Image)).toList();
-    expect(images.length, 2);
-    final backY = tester.getTopLeft(find.byType(Image).first).dy;
-    final frontY = tester.getTopLeft(find.byType(Image).last).dy;
-    expect(backY, lessThan(frontY));
+    // Back photo fills the view; the selfie is a small card over it.
+    final photos = find.byWidgetPredicate(
+        (w) => w is Image && w.image is! NetworkImage);
+    expect(photos, findsNWidgets(2));
+    final backSize = tester.getSize(photos.first);
+    final frontSize = tester.getSize(photos.last);
+    expect(frontSize.width, lessThan(backSize.width / 2));
+  });
+
+  testWidgets('map can be turned off', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: DualShotView(result: result, showMap: false)),
+      ),
+    );
+    expect(find.byType(MapThumbnail), findsNothing);
   });
 
   testWidgets('shows fallback when location missing', (tester) async {
@@ -84,6 +95,16 @@ void main() {
       ),
     );
     expect(find.text('स्थान उपलब्ध नहीं'), findsOneWidget);
+  });
+
+  test('tileUrl computes the OSM tile for a location', () {
+    expect(MapThumbnail.tileUrl(0, 0, 0),
+        'https://tile.openstreetmap.org/0/0/0.png');
+    expect(MapThumbnail.tileUrl(10, 10, 1),
+        'https://tile.openstreetmap.org/1/1/0.png');
+    // Pune at the default zoom, precomputed by hand.
+    expect(MapThumbnail.tileUrl(18.520430, 73.856743),
+        'https://tile.openstreetmap.org/15/23106/14668.png');
   });
 
   test('formatTimestamp zero-pads', () {
