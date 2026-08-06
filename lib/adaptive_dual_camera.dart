@@ -8,5 +8,6 @@ export 'package:camera/camera.dart' show ResolutionPreset, XFile;
 
 export 'src/capture_flow.dart';
 export 'src/labels.dart';
+export 'src/map_thumbnail.dart';
 export 'src/models.dart';
 export 'src/result_view.dart';
