@@ -24,12 +24,8 @@ class MyApp extends StatelessWidget {
 const _localizedLabels = <String, DualCaptureLabels>{
   'English': DualCaptureLabels(),
   'हिन्दी': DualCaptureLabels(
-    stepOne: 'चरण 1 / 2',
-    stepTwo: 'चरण 2 / 2',
-    frontPrompt: 'पहले फ्रंट कैमरे से फोटो लेंगे।\nअपना चेहरा दिखाएँ।',
-    backPrompt: 'अब बैक कैमरे को उस ओर करें जिसे कैप्चर करना है।',
-    ready: 'तैयार हूँ',
-    loadingCameras: 'कैमरे लोड हो रहे हैं…',
+    frontPrompt: 'अपना चेहरा दिखाएँ',
+    backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
     gettingLocation: 'स्थान प्राप्त हो रहा है…',
     cameraDenied: 'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
     retry: 'फिर से कोशिश करें',
@@ -137,9 +133,9 @@ class _HowItWorksCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const steps = [
-      (Icons.face, 'Front photo — you are prompted to show your face'),
-      (Icons.photo_camera, 'Back photo — point at your subject'),
-      (Icons.place, 'Location + timestamp are stamped automatically'),
+      (Icons.face, 'Selfie first — camera opens right away'),
+      (Icons.photo_camera, 'Back photo — switches automatically'),
+      (Icons.place, 'Location + time stamped for you'),
     ];
     return Card(
       child: Padding(
@@ -168,43 +164,83 @@ class _HowItWorksCard extends StatelessWidget {
   }
 }
 
-/// Shows the composed result — back photo on top, front photo + geo/time
-/// footer below — plus the raw data underneath.
-class ResultPage extends StatelessWidget {
+/// Shows the composed result and can save it as one image.
+class ResultPage extends StatefulWidget {
   const ResultPage({super.key, required this.result, required this.labels});
 
   final DualShotResult result;
   final DualCaptureLabels labels;
 
   @override
+  State<ResultPage> createState() => _ResultPageState();
+}
+
+class _ResultPageState extends State<ResultPage> {
+  final _viewKey = GlobalKey();
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final file = await saveComposedDualShot(_viewKey, widget.result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved: ${file.path}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Your capture')),
-      body: Column(
-        children: [
-          Expanded(child: DualShotView(result: result, labels: labels)),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'front: ${result.frontPhoto.path}\n'
-                    'back:  ${result.backPhoto.path}',
-                    style: Theme.of(context).textTheme.bodySmall,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Expanded(
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  margin: EdgeInsets.zero,
+                  child: RepaintBoundary(
+                    key: _viewKey,
+                    child: DualShotView(
+                        result: widget.result, labels: widget.labels),
                   ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.replay),
-                    label: const Text('Retake'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.replay),
+                      label: const Text('Retake'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: const Icon(Icons.save_alt),
+                      label: Text(_saving ? 'Saving…' : 'Save'),
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

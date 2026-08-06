@@ -11,21 +11,35 @@ phones: only one camera controller is ever alive, previews default to
 
 ## The flow
 
-1. The user is told: *"First we'll take a picture with the front camera. Show
-   your face."* → front photo.
-2. Then: *"Now point the back camera at what you want to capture."* → back
-   photo.
-3. Lat/long (low accuracy, 10 s cap, falls back to last known, then to none)
-   and a timestamp are attached, and you get a `DualShotResult`.
+Two taps total, no interstitial screens:
 
-`DualShotView` renders the result exactly as:
+1. The front camera opens immediately with a hint banner: *"Show your
+   face"* → tap the shutter.
+2. The back camera opens automatically: *"Point at what you want to
+   capture"* → tap again.
+3. Lat/long (fetched in parallel while shooting; falls back to last known,
+   then to none) and a timestamp are attached, and you get a
+   `DualShotResult`.
+
+`DualShotView` renders the result GPS-camera style:
 
 ```
-Column [
-  back photo,
-  Row [ front photo, (lat, long, timestamp) ]
-]
+┌──────────────────────┐
+│ back photo   ┌─────┐ │
+│  (full)      │front│ │
+│              └─────┘ │
+│ ┌────┐ lat, long     │
+│ │map │ timestamp     │
+│ └────┴───────────────┤
+└──────────────────────┘
 ```
+
+The map is a single OpenStreetMap tile with a marker (`MapThumbnail`) — no
+maps SDK, no API key. Pass `showMap: false` for offline apps.
+
+To save the composed layout as one image, wrap the view in a
+`RepaintBoundary` and call `saveComposedDualShot(key, result)` — the PNG
+lands next to the captured photos in the app cache.
 
 ## Usage
 
@@ -51,8 +65,8 @@ translate or reword:
 ```dart
 GuidedDualCaptureFlow(
   labels: const DualCaptureLabels(
-    frontPrompt: 'पहले फ्रंट कैमरे से फोटो लेंगे।\nअपना चेहरा दिखाएँ।',
-    ready: 'तैयार हूँ',
+    frontPrompt: 'अपना चेहरा दिखाएँ',
+    backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
   ),
   onComplete: ...,
 )
@@ -72,6 +86,8 @@ Declare in your app:
 ```xml
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<!-- for the map thumbnail -->
+<uses-permission android:name="android.permission.INTERNET" />
 ```
 
 **iOS** (`ios/Runner/Info.plist`):

@@ -1,3 +1,33 @@
+## 0.1.1
+
+* `DualShotView` redesigned GPS-camera style: the back photo fills the view,
+  the selfie floats as a bordered card top-right, and a translucent bottom
+  bar holds the map, coordinates and timestamp.
+* New `saveComposedDualShot(boundaryKey, result)`: saves the composed layout
+  as one PNG next to the captured photos in the app cache.
+* The finishing step waits at most 2 seconds for the in-flight GPS fix, then
+  uses the instant last-known position — "Getting location…" no longer stalls.
+* One-go capture flow: the interstitial "I'm ready" screens are gone. The
+  front camera opens immediately with a hint banner over the viewfinder,
+  the back camera opens automatically after the selfie — two taps total.
+  Redesigned viewfinder: full-bleed preview, gradient scrims, step chip,
+  ring shutter, and the front shot shown as a thumbnail during the back
+  shot. `DualCaptureLabels` lost `ready`/`loadingCameras` and its prompts
+  are now short one-liners.
+* New `MapThumbnail`: a real map in the result footer — one OpenStreetMap
+  tile with a marker, no maps SDK and no API key. `DualShotView` shows it
+  next to the front photo when location is available; pass `showMap: false`
+  to skip it (offline apps). Apps need the `INTERNET` permission on Android.
+* `DualShotView` design pass: themed footer surface, rounded thumbnails,
+  clearer coordinate/time typography.
+* Much faster location + result display:
+  * The GPS fix now starts as soon as the flow opens and runs in parallel
+    while the user takes both photos — the "Getting location…" step usually
+    completes instantly instead of waiting up to 10 seconds.
+  * `DualShotView` decodes photos at display size (`cacheWidth`/`cacheHeight`)
+    instead of full camera resolution — quicker to appear and far less memory
+    on old devices.
+
 ## 0.1.0
 
 * **Complete rewrite — breaking.** The method-channel plugin and all native

@@ -3,6 +3,8 @@
          for the lat/long stamp on each capture. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- The map thumbnail fetches one OpenStreetMap tile. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="adaptive_dual_camera_example"
         android:name="${applicationName}"
