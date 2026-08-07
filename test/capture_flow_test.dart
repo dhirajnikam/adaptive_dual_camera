@@ -19,13 +19,22 @@ final Uint8List _kPng = Uint8List.fromList(<int>[
 
 /// A camera that always initializes and hands back a real (tiny) file, so the
 /// flow can be driven with no device. Records which lens each shot came from.
+///
+/// [concurrent] models the hardware split this package cares about: true for
+/// a device that can hold front and back open at once, false for one that
+/// refuses the second camera.
 class _FakeCameraPlatform extends CameraPlatform {
-  _FakeCameraPlatform(this.dir);
+  _FakeCameraPlatform(this.dir, {this.concurrent = false});
 
   final Directory dir;
+  final bool concurrent;
   final List<CameraLensDirection> shotLenses = <CameraLensDirection>[];
   final Map<int, CameraLensDirection> _lensOf = <int, CameraLensDirection>{};
+  final Set<int> _open = <int>{};
   int _nextId = 0;
+
+  /// How many cameras were ever open at the same moment.
+  int peakOpen = 0;
 
   // CameraController awaits `.first` on the error stream, so it has to stay
   // open for the life of the test — an empty (or closed) stream completes
@@ -61,7 +70,16 @@ class _FakeCameraPlatform extends CameraPlatform {
   Future<void> initializeCamera(
     int cameraId, {
     ImageFormatGroup imageFormatGroup = ImageFormatGroup.unknown,
-  }) async {}
+  }) async {
+    if (!concurrent && _open.isNotEmpty) {
+      throw CameraException(
+        'CameraAccessError',
+        'Another camera is already in use.',
+      );
+    }
+    _open.add(cameraId);
+    peakOpen = peakOpen > _open.length ? peakOpen : _open.length;
+  }
 
   @override
   Stream<CameraInitializedEvent> onCameraInitialized(int cameraId) =>
@@ -96,7 +114,7 @@ class _FakeCameraPlatform extends CameraPlatform {
   }
 
   @override
-  Future<void> dispose(int cameraId) async {}
+  Future<void> dispose(int cameraId) async => _open.remove(cameraId);
 }
 
 void main() {
@@ -105,10 +123,16 @@ void main() {
   late Directory dir;
   late _FakeCameraPlatform camera;
 
+  /// Swap in hardware that can (or can't) run both cameras at once. Call
+  /// before pumping the flow.
+  void useCamera({required bool concurrent}) {
+    camera = _FakeCameraPlatform(dir, concurrent: concurrent);
+    CameraPlatform.instance = camera;
+  }
+
   setUp(() {
     dir = Directory.systemTemp.createTempSync('capture_flow_test');
-    camera = _FakeCameraPlatform(dir);
-    CameraPlatform.instance = camera;
+    useCamera(concurrent: false);
     // Geolocator's real channel never answers under fake async, which would
     // hang the flow. Report location services off — the documented degraded
     // path, and the one worth proving the capture survives.
@@ -130,7 +154,9 @@ void main() {
     }
   }
 
-  testWidgets('counts down and takes both photos with no taps', (tester) async {
+  testWidgets('sequential hardware: counts down twice, no taps', (
+    tester,
+  ) async {
     DualShotResult? result;
     await tester.pumpWidget(
       MaterialApp(
@@ -171,8 +197,65 @@ void main() {
       CameraLensDirection.back,
     ]);
     expect(result, isNotNull);
+    expect(result!.wasSimultaneous, isFalse);
+    expect(camera.peakOpen, 1); // never two pipelines at once
     // No location plugin under test — the capture still succeeds without one.
     expect(result!.hasLocation, isFalse);
+  });
+
+  testWidgets('concurrent hardware: one countdown, both shutters together', (
+    tester,
+  ) async {
+    useCamera(concurrent: true);
+    DualShotResult? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GuidedDualCaptureFlow(
+          countdown: const Duration(seconds: 3),
+          onComplete: (r) => result = r,
+        ),
+      ),
+    );
+    await flush(tester);
+
+    // Both cameras came up, so there is one shared countdown, not two.
+    expect(camera.peakOpen, 2);
+    expect(find.text('Both photos at once — hold still…'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    await flush(tester);
+
+    expect(camera.shotLenses, hasLength(2));
+    expect(camera.shotLenses.toSet(), {
+      CameraLensDirection.front,
+      CameraLensDirection.back,
+    });
+    expect(result, isNotNull);
+    expect(result!.wasSimultaneous, isTrue);
+  });
+
+  testWidgets('mode: sequential skips the probe on concurrent hardware', (
+    tester,
+  ) async {
+    useCamera(concurrent: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GuidedDualCaptureFlow(
+          countdown: const Duration(seconds: 3),
+          mode: DualCaptureMode.sequential,
+          onComplete: (_) {},
+        ),
+      ),
+    );
+    await flush(tester);
+
+    expect(camera.peakOpen, 1);
+    expect(find.text('Taking your selfie…'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await flush(tester);
   });
 
   testWidgets('countdown labels are overridable', (tester) async {

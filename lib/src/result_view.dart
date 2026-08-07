@@ -8,91 +8,90 @@ import 'labels.dart';
 import 'map_thumbnail.dart';
 import 'models.dart';
 
-/// Visual knobs for [DualShotView]: where the selfie sits, how big it is,
-/// and the colors of the info bar. Everything the composed (and saved)
-/// image looks like, in one const-able object.
+/// Visual knobs for [DualShotView]: the proportions of the two rows, the size
+/// of the thumbnails, and the colors of the footer. Everything the composed
+/// (and saved) image looks like, in one const-able object.
 class DualShotStyle {
   const DualShotStyle({
-    this.selfieAlignment = Alignment.topRight,
-    this.selfieWidth = 88,
-    this.selfieRadius = 10,
-    this.selfieBorderColor = Colors.white,
-    this.barColor = Colors.black54,
+    this.footerHeight = 96,
+    this.thumbnailRadius = 8,
+    this.thumbnailBorderColor,
+    this.footerColor = const Color(0xFF1C1C1E),
     this.textColor = Colors.white,
-    this.barRadius = 0,
+    this.gap = 8,
+    this.showMapInFooter = true,
   });
 
-  /// Corner (or edge) the selfie card floats in.
-  final Alignment selfieAlignment;
+  /// Height of the bottom row. The back photo takes whatever is left.
+  final double footerHeight;
 
-  /// Selfie card width; height is a fixed 3:4 portrait.
-  final double selfieWidth;
+  /// Corner radius of the selfie and map thumbnails.
+  final double thumbnailRadius;
 
-  /// Corner radius of the selfie card.
-  final double selfieRadius;
+  /// Optional hairline around the thumbnails; null for none.
+  final Color? thumbnailBorderColor;
 
-  /// Border color of the selfie card.
-  final Color selfieBorderColor;
+  /// Footer background.
+  final Color footerColor;
 
-  /// Background of the info bar (map + coordinates + timestamp).
-  final Color barColor;
-
-  /// Primary text color; secondary text derives from it at 70% opacity.
+  /// Primary text; the timestamp uses it at 70% opacity.
   final Color textColor;
 
-  /// 0 = classic full-width bar flush with the bottom edge; > 0 floats the
-  /// bar inset from the edges with rounded corners.
-  final double barRadius;
+  /// Spacing between the footer's cells and around its edges.
+  final double gap;
 
-  /// Full-width translucent black bar — the GPS-camera default.
-  static const classic = DualShotStyle();
+  /// Set false to drop the map cell but keep the coordinates — the offline
+  /// middle ground between a full map and no location at all.
+  final bool showMapInFooter;
 
-  /// Dark rounded card floating above the bottom edge.
-  static const floating = DualShotStyle(
-    barRadius: 16,
-    barColor: Color(0xCC1C1C1E),
-  );
+  /// Dark footer, the default.
+  static const dark = DualShotStyle();
 
-  /// Light rounded card for bright, airy shots.
+  /// Light footer for bright, airy shots.
   static const light = DualShotStyle(
-    barRadius: 16,
-    barColor: Color(0xE6FFFFFF),
+    footerColor: Color(0xFFF2F2F7),
     textColor: Color(0xDE000000),
   );
 
+  /// Taller footer with bigger type — easier to read at a glance, and what
+  /// you want if the image will be viewed as a thumbnail.
+  static const tall = DualShotStyle(footerHeight: 128, gap: 12);
+
   DualShotStyle copyWith({
-    Alignment? selfieAlignment,
-    double? selfieWidth,
-    double? selfieRadius,
-    Color? selfieBorderColor,
-    Color? barColor,
+    double? footerHeight,
+    double? thumbnailRadius,
+    Color? thumbnailBorderColor,
+    Color? footerColor,
     Color? textColor,
-    double? barRadius,
+    double? gap,
+    bool? showMapInFooter,
   }) {
     return DualShotStyle(
-      selfieAlignment: selfieAlignment ?? this.selfieAlignment,
-      selfieWidth: selfieWidth ?? this.selfieWidth,
-      selfieRadius: selfieRadius ?? this.selfieRadius,
-      selfieBorderColor: selfieBorderColor ?? this.selfieBorderColor,
-      barColor: barColor ?? this.barColor,
+      footerHeight: footerHeight ?? this.footerHeight,
+      thumbnailRadius: thumbnailRadius ?? this.thumbnailRadius,
+      thumbnailBorderColor: thumbnailBorderColor ?? this.thumbnailBorderColor,
+      footerColor: footerColor ?? this.footerColor,
       textColor: textColor ?? this.textColor,
-      barRadius: barRadius ?? this.barRadius,
+      gap: gap ?? this.gap,
+      showMapInFooter: showMapInFooter ?? this.showMapInFooter,
     );
   }
 }
 
-/// Renders a [DualShotResult] GPS-camera style: the back photo fills the
-/// view, the selfie floats as a card, and a translucent bar holds the map,
-/// coordinates and timestamp. Pass a [DualShotStyle] to move the selfie,
-/// resize it, or recolor the bar — the saved image follows whatever is on
-/// screen.
+/// Renders a [DualShotResult] as
+/// `Column[back photo, Row[front photo, map, lat/long/timestamp]]`.
+///
+/// The layout is the same whether the two photos were taken simultaneously or
+/// one after the other — [DualShotResult.wasSimultaneous] changes nothing
+/// here on purpose, so a mixed fleet of devices produces one consistent
+/// image.
 class DualShotView extends StatelessWidget {
   const DualShotView({
     super.key,
     required this.result,
     this.showMap = true,
     this.labels = const DualCaptureLabels(),
-    this.style = DualShotStyle.classic,
+    this.style = DualShotStyle.dark,
   });
 
   final DualShotResult result;
@@ -103,9 +102,12 @@ class DualShotView extends StatelessWidget {
   /// Override to translate or reword every user-visible string.
   final DualCaptureLabels labels;
 
-  /// Layout and colors; see [DualShotStyle.classic], [DualShotStyle.floating]
-  /// and [DualShotStyle.light] for ready-made looks.
+  /// Sizes and colors; see [DualShotStyle.dark], [DualShotStyle.light] and
+  /// [DualShotStyle.tall].
   final DualShotStyle style;
+
+  bool get _mapVisible =>
+      showMap && style.showMapInFooter && result.hasLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -113,100 +115,114 @@ class DualShotView extends StatelessWidget {
     // to load and far less memory on old devices.
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final backWidth = (MediaQuery.sizeOf(context).width * dpr).round();
+    final cell = style.footerHeight - style.gap * 2;
 
-    return Stack(
-      fit: StackFit.expand,
+    return Column(
       children: [
-        Image.file(
-          File(result.backPhoto.path),
-          fit: BoxFit.cover,
-          cacheWidth: backWidth,
-        ),
-        // Selfie card.
-        Padding(
-          // ponytail: fixed 100px bottom inset clears the info bar for
-          // bottom alignments; measure the bar if styles ever grow taller.
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
-          child: Align(
-            alignment: style.selfieAlignment,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(style.selfieRadius),
-                border: Border.all(color: style.selfieBorderColor, width: 2),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black45, blurRadius: 8),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(style.selfieRadius - 2),
-                child: Image.file(
-                  File(result.frontPhoto.path),
-                  width: style.selfieWidth,
-                  height: style.selfieWidth * 4 / 3,
-                  fit: BoxFit.cover,
-                  cacheHeight: (style.selfieWidth * 4 / 3 * dpr).round(),
-                ),
-              ),
+        Expanded(
+          child: SizedBox(
+            width: double.infinity,
+            child: Image.file(
+              File(result.backPhoto.path),
+              fit: BoxFit.cover,
+              cacheWidth: backWidth,
             ),
           ),
         ),
-        // Bottom info bar.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
+        SizedBox(
+          height: style.footerHeight,
           child: Container(
-            margin: style.barRadius > 0 ? const EdgeInsets.all(12) : null,
-            decoration: BoxDecoration(
-              color: style.barColor,
-              borderRadius: BorderRadius.circular(style.barRadius),
-            ),
-            padding: const EdgeInsets.all(10),
+            color: style.footerColor,
+            padding: EdgeInsets.all(style.gap),
             child: Row(
               children: [
-                if (showMap && result.hasLocation) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                _framed(
+                  child: Image.file(
+                    File(result.frontPhoto.path),
+                    width: cell * 3 / 4,
+                    height: cell,
+                    fit: BoxFit.cover,
+                    cacheHeight: (cell * dpr).round(),
+                  ),
+                ),
+                SizedBox(width: style.gap),
+                if (_mapVisible) ...[
+                  _framed(
                     child: SizedBox(
-                      width: 64,
-                      height: 64,
+                      width: cell,
+                      height: cell,
                       child: MapThumbnail(
                         latitude: result.latitude!,
                         longitude: result.longitude!,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: style.gap),
                 ],
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        result.hasLocation
-                            ? '${result.latitude!.toStringAsFixed(6)}, '
-                                  '${result.longitude!.toStringAsFixed(6)}'
-                            : labels.locationUnavailable,
-                        style: TextStyle(
-                          color: style.textColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        formatTimestamp(result.timestamp),
-                        style: TextStyle(
-                          color: style.textColor.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                Expanded(child: _details()),
               ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _framed({required Widget child}) {
+    final clipped = ClipRRect(
+      borderRadius: BorderRadius.circular(style.thumbnailRadius),
+      child: child,
+    );
+    final border = style.thumbnailBorderColor;
+    if (border == null) return clipped;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(style.thumbnailRadius),
+        border: Border.all(color: border),
+      ),
+      child: clipped,
+    );
+  }
+
+  Widget _details() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (result.hasLocation) ...[
+          _line(
+            Icons.place,
+            '${result.latitude!.toStringAsFixed(6)}, '
+            '${result.longitude!.toStringAsFixed(6)}',
+            bold: true,
+          ),
+          const SizedBox(height: 4),
+        ] else ...[
+          _line(Icons.location_off, labels.locationUnavailable, bold: true),
+          const SizedBox(height: 4),
+        ],
+        _line(Icons.schedule, formatTimestamp(result.timestamp)),
+      ],
+    );
+  }
+
+  Widget _line(IconData icon, String text, {bool bold = false}) {
+    final color = bold
+        ? style.textColor
+        : style.textColor.withValues(alpha: 0.7);
+    return Row(
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.normal,
             ),
           ),
         ),
@@ -240,8 +256,8 @@ Future<File> saveComposedDualShot(
     // Wait for the map tile to arrive and paint before snapshotting, so a
     // quick save doesn't capture an empty map square. Offline the precache
     // fails fast and the on-screen fallback icon is captured instead.
-    // ponytail: also waits when showMap is false — worst case one wasted
-    // tile fetch capped at 3s; thread showMap through if that ever matters.
+    // ponytail: also waits when the map is hidden — worst case one wasted
+    // tile fetch capped at 3s; thread the flag through if that ever matters.
     await precacheImage(
       NetworkImage(MapThumbnail.tileUrl(result.latitude!, result.longitude!)),
       boundaryKey.currentContext!,
@@ -265,8 +281,19 @@ Future<File> saveComposedDualShot(
   }
 }
 
-/// `2026-08-06 14:05` — stdlib only, no intl dependency.
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// `7 Aug 2026, 2:05 PM` — stdlib only, no intl dependency.
+///
+/// ponytail: English month names and a 12-hour clock, because the package has
+/// no locale to work from. Apps that need a localized stamp should format the
+/// timestamp themselves with `intl` and pass it in.
 String formatTimestamp(DateTime t) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  final minute = t.minute.toString().padLeft(2, '0');
+  final meridiem = t.hour < 12 ? 'AM' : 'PM';
+  return '${t.day} ${_months[t.month - 1]} ${t.year}, $hour12:$minute $meridiem';
 }

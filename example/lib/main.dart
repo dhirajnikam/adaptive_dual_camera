@@ -26,9 +26,12 @@ const _localizedLabels = <String, DualCaptureLabels>{
   'हिन्दी': DualCaptureLabels(
     frontPrompt: 'अपना चेहरा दिखाएँ',
     backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
+    bothPrompt: 'अपना चेहरा और सामने का दृश्य दोनों दिखाएँ',
     frontCountdown: 'सेल्फ़ी ली जा रही है…',
     backCountdown: 'फ़ोन घुमाएँ — अब पीछे का फ़ोटो',
+    bothCountdown: 'दोनों फ़ोटो एक साथ — स्थिर रहें…',
     capturing: 'फ़ोटो लिया जा रहा है…',
+    openingCameras: 'कैमरे खुल रहे हैं…',
     gettingLocation: 'स्थान प्राप्त हो रहा है…',
     cameraDenied:
         'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
@@ -50,6 +53,9 @@ class _HomePageState extends State<HomePage> {
   // Medium suits most phones; low keeps very old devices smooth.
   ResolutionPreset _resolution = ResolutionPreset.medium;
 
+  // Auto uses both cameras at once where the hardware allows it.
+  DualCaptureMode _mode = DualCaptureMode.auto;
+
   DualCaptureLabels get _labels => _localizedLabels[_language]!;
 
   Future<void> _startCapture() async {
@@ -58,6 +64,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => GuidedDualCaptureFlow(
           labels: _labels,
           resolution: _resolution,
+          mode: _mode,
           onComplete: (r) => Navigator.of(context).pop(r),
           onError: (e) {
             ScaffoldMessenger.of(
@@ -118,6 +125,31 @@ class _HomePageState extends State<HomePage> {
             'Pick Low on very old phones.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 16),
+          Text('Capture mode', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          SegmentedButton<DualCaptureMode>(
+            segments: const [
+              ButtonSegment(
+                value: DualCaptureMode.auto,
+                label: Text('Auto'),
+                icon: Icon(Icons.flip_camera_android),
+              ),
+              ButtonSegment(
+                value: DualCaptureMode.sequential,
+                label: Text('Sequential'),
+                icon: Icon(Icons.looks_two),
+              ),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Auto fires both cameras together when the device supports it, '
+            'and falls back on its own when it does not.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _startCapture,
@@ -139,9 +171,12 @@ class _HowItWorksCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const steps = [
-      (Icons.face, 'Selfie first — shot automatically after a countdown'),
-      (Icons.screen_rotation_alt, 'Turn the phone around — back photo next'),
-      (Icons.place, 'Location + time stamped for you — no taps at all'),
+      (
+        Icons.flip_camera_android,
+        'Both cameras at once where the phone supports it',
+      ),
+      (Icons.looks_two, 'Otherwise selfie first, then the back photo'),
+      (Icons.place, 'Same layout either way — no taps at all'),
     ];
     return Card(
       child: Padding(
@@ -186,10 +221,10 @@ class ResultPage extends StatefulWidget {
 class _ResultPageState extends State<ResultPage> {
   final _viewKey = GlobalKey();
   bool _saving = false;
-  Alignment _corner = Alignment.topRight;
-  DualShotStyle _preset = DualShotStyle.classic;
+  bool _showMap = true;
+  DualShotStyle _preset = DualShotStyle.dark;
 
-  DualShotStyle get _style => _preset.copyWith(selfieAlignment: _corner);
+  DualShotStyle get _style => _preset;
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -230,9 +265,31 @@ class _ResultPageState extends State<ResultPage> {
                       result: widget.result,
                       labels: widget.labels,
                       style: _style,
+                      showMap: _showMap,
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(height: 8),
+              // Which path the device actually took — the layout above is
+              // identical either way.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    widget.result.wasSimultaneous
+                        ? Icons.flip_camera_android
+                        : Icons.looks_two,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.result.wasSimultaneous
+                        ? 'Both cameras fired together'
+                        : 'Cameras fired one after the other',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               // Customize the layout; the saved image matches the preview.
@@ -242,16 +299,16 @@ class _ResultPageState extends State<ResultPage> {
                     showSelectedIcon: false,
                     segments: const [
                       ButtonSegment(
-                        value: DualShotStyle.classic,
-                        label: Text('Classic'),
-                      ),
-                      ButtonSegment(
-                        value: DualShotStyle.floating,
-                        label: Text('Float'),
+                        value: DualShotStyle.dark,
+                        label: Text('Dark'),
                       ),
                       ButtonSegment(
                         value: DualShotStyle.light,
                         label: Text('Light'),
+                      ),
+                      ButtonSegment(
+                        value: DualShotStyle.tall,
+                        label: Text('Tall'),
                       ),
                     ],
                     selected: {_preset},
@@ -259,29 +316,12 @@ class _ResultPageState extends State<ResultPage> {
                         setState(() => _preset = s.first),
                   ),
                   const Spacer(),
-                  SegmentedButton<Alignment>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(
-                        value: Alignment.topLeft,
-                        icon: Icon(Icons.north_west, size: 16),
-                      ),
-                      ButtonSegment(
-                        value: Alignment.topRight,
-                        icon: Icon(Icons.north_east, size: 16),
-                      ),
-                      ButtonSegment(
-                        value: Alignment.bottomLeft,
-                        icon: Icon(Icons.south_west, size: 16),
-                      ),
-                      ButtonSegment(
-                        value: Alignment.bottomRight,
-                        icon: Icon(Icons.south_east, size: 16),
-                      ),
-                    ],
-                    selected: {_corner},
-                    onSelectionChanged: (s) =>
-                        setState(() => _corner = s.first),
+                  IconButton.filledTonal(
+                    tooltip: _showMap ? 'Hide map' : 'Show map',
+                    isSelected: _showMap,
+                    icon: const Icon(Icons.map_outlined),
+                    selectedIcon: const Icon(Icons.map),
+                    onPressed: () => setState(() => _showMap = !_showMap),
                   ),
                 ],
               ),

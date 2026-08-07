@@ -1,3 +1,36 @@
+## 0.4.0
+
+* **Simultaneous capture where the hardware allows it.** On devices that can
+  run both cameras at once (Android concurrent-camera devices, iPhone XS/A12
+  and later) the flow now brings up both previews — back full-bleed with the
+  selfie inset — runs one countdown, and fires **both shutters together**, so
+  the two photos are milliseconds apart instead of seconds. Everything else
+  keeps the one-at-a-time flow.
+* Support is probed by actually opening the second camera rather than by
+  asking the platform, so a device that advertises concurrency but can't
+  deliver it falls back cleanly. New `mode:` parameter
+  (`DualCaptureMode.auto`, the default, or `.sequential`) skips the probe —
+  use `sequential` on old and low-RAM phones.
+* `DualShotResult.wasSimultaneous` reports which path ran, for apps that need
+  the two shots to prove "same moment".
+* **`DualShotView` relaid out — breaking.** It is now
+  `Column[back photo, Row[front photo, map, lat/long + timestamp]]` instead of
+  the GPS-camera overlay, and it is identical for both capture paths, so a
+  mixed fleet of devices produces one consistent image.
+* **Human-readable timestamps — breaking.** `formatTimestamp` now returns
+  `7 Aug 2026, 2:05 PM` rather than `2026-08-07 14:05`. Still stdlib-only, so
+  it is English and 12-hour; format it yourself with `intl` if you need a
+  localized stamp.
+* `DualShotStyle` reworked for the new layout: `footerHeight`,
+  `thumbnailRadius`, `thumbnailBorderColor`, `footerColor`, `textColor`,
+  `gap`, `showMapInFooter`, with `dark` / `light` / `tall` presets. The
+  0.2.0 fields (`selfieAlignment`, `barRadius`, …) described an overlay that
+  no longer exists and are gone.
+* `DualCaptureLabels` gains `bothStep`, `bothPrompt`, `bothCountdown` and
+  `openingCameras` for the simultaneous path.
+* Example app: a capture-mode picker, a map toggle, and a line reporting
+  which path the device actually took.
+
 ## 0.3.0
 
 * **Hands-free capture — behavior change.** `GuidedDualCaptureFlow` no longer

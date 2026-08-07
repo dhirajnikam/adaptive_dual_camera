@@ -4,11 +4,15 @@ class DualCaptureLabels {
   const DualCaptureLabels({
     this.stepOne = '1 / 2',
     this.stepTwo = '2 / 2',
+    this.bothStep = 'Both cameras',
     this.frontPrompt = 'Show your face',
     this.backPrompt = 'Point at what you want to capture',
+    this.bothPrompt = 'Show your face and what is in front of you',
     this.frontCountdown = 'Taking your selfie…',
     this.backCountdown = 'Turn the phone around — back photo next',
+    this.bothCountdown = 'Both photos at once — hold still…',
     this.capturing = 'Capturing…',
+    this.openingCameras = 'Opening cameras…',
     this.gettingLocation = 'Getting location…',
     this.cameraDenied =
         'Camera access is needed to take pictures.\nPlease allow camera access and try again.',
@@ -18,8 +22,17 @@ class DualCaptureLabels {
 
   final String stepOne;
   final String stepTwo;
+
+  /// Replaces the "1 / 2" step chip when both cameras fire together — there
+  /// are no steps to count.
+  final String bothStep;
+
   final String frontPrompt;
   final String backPrompt;
+
+  /// Banner hint in simultaneous mode, where the user has to satisfy both
+  /// cameras at the same time.
+  final String bothPrompt;
 
   /// Under the countdown before the automatic selfie.
   final String frontCountdown;
@@ -28,8 +41,14 @@ class DualCaptureLabels {
   /// user has to turn the phone around.
   final String backCountdown;
 
+  /// Under the countdown in simultaneous mode.
+  final String bothCountdown;
+
   /// Under the spinner while the shot is actually being taken.
   final String capturing;
+
+  /// While the flow is deciding whether this device can run both cameras.
+  final String openingCameras;
 
   final String gettingLocation;
   final String cameraDenied;

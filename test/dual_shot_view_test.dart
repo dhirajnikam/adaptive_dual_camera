@@ -95,7 +95,7 @@ void main() {
 
   tearDown(() => dir.deleteSync(recursive: true));
 
-  testWidgets('shows back photo full-bleed, selfie card, map and details', (
+  testWidgets('lays out Column[back, Row[front, map, details]]', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -106,17 +106,28 @@ void main() {
     await tester.pump(); // let the map tile request fail into its fallback
 
     expect(find.text('18.520430, 73.856743'), findsOneWidget);
-    expect(find.text('2026-08-06 14:05'), findsOneWidget);
+    expect(find.text('6 Aug 2026, 2:05 PM'), findsOneWidget);
     expect(find.byType(MapThumbnail), findsOneWidget);
 
-    // Back photo fills the view; the selfie is a small card over it.
     final photos = find.byWidgetPredicate(
       (w) => w is Image && w.image is! NetworkImage,
     );
     expect(photos, findsNWidgets(2));
-    final backSize = tester.getSize(photos.first);
-    final frontSize = tester.getSize(photos.last);
-    expect(frontSize.width, lessThan(backSize.width / 2));
+    final back = tester.getRect(photos.first);
+    final front = tester.getRect(photos.last);
+    final map = tester.getRect(find.byType(MapThumbnail));
+    final coords = tester.getRect(find.text('18.520430, 73.856743'));
+
+    // Column: the back photo sits entirely above the footer row.
+    expect(back.bottom, lessThanOrEqualTo(front.top));
+    expect(back.width, tester.getSize(find.byType(DualShotView)).width);
+    // Row: front photo, then map, then the text — left to right, and all
+    // three below the back photo rather than overlaid on it.
+    expect(front.left, lessThan(map.left));
+    expect(map.left, lessThan(coords.left));
+    for (final r in [front, map, coords]) {
+      expect(r.top, greaterThanOrEqualTo(back.bottom));
+    }
   });
 
   testWidgets('map can be turned off', (tester) async {
@@ -164,17 +175,14 @@ void main() {
     expect(find.text('स्थान उपलब्ध नहीं'), findsOneWidget);
   });
 
-  testWidgets('style moves the selfie and recolors the text', (tester) async {
+  testWidgets('style resizes the footer and recolors the text', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: DualShotView(
             result: result,
             showMap: false,
-            style: DualShotStyle.light.copyWith(
-              selfieAlignment: Alignment.topLeft,
-              selfieWidth: 120,
-            ),
+            style: DualShotStyle.light.copyWith(footerHeight: 140),
           ),
         ),
       ),
@@ -183,12 +191,46 @@ void main() {
     final selfie = find
         .byWidgetPredicate((w) => w is Image && w.image is! NetworkImage)
         .last;
-    final screen = tester.getSize(find.byType(DualShotView));
-    expect(tester.getSize(selfie).width, 120);
-    expect(tester.getTopLeft(selfie).dx, lessThan(screen.width / 2));
+    // Footer is 140 tall with a default 8 gap top and bottom, so the
+    // thumbnail fills 124 of it.
+    expect(tester.getSize(selfie).height, 124);
 
     final coords = tester.widget<Text>(find.text('18.520430, 73.856743'));
     expect(coords.style!.color, DualShotStyle.light.textColor);
+  });
+
+  testWidgets('simultaneous and sequential results render identically', (
+    tester,
+  ) async {
+    Future<List<Rect>> layoutOf(bool simultaneous) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DualShotView(
+              result: DualShotResult(
+                frontPhoto: result.frontPhoto,
+                backPhoto: result.backPhoto,
+                timestamp: result.timestamp,
+                latitude: result.latitude,
+                longitude: result.longitude,
+                wasSimultaneous: simultaneous,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return [
+        ...find
+            .byWidgetPredicate((w) => w is Image && w.image is! NetworkImage)
+            .evaluate()
+            .map((e) => tester.getRect(find.byWidget(e.widget))),
+        tester.getRect(find.byType(MapThumbnail)),
+        tester.getRect(find.text('6 Aug 2026, 2:05 PM')),
+      ];
+    }
+
+    expect(await layoutOf(true), await layoutOf(false));
   });
 
   test('tileUrl computes the OSM tile for a location', () {
@@ -207,7 +249,19 @@ void main() {
     );
   });
 
-  test('formatTimestamp zero-pads', () {
-    expect(formatTimestamp(DateTime(2026, 1, 2, 3, 4)), '2026-01-02 03:04');
+  test('formatTimestamp is human readable around the clock', () {
+    expect(formatTimestamp(DateTime(2026, 1, 2, 3, 4)), '2 Jan 2026, 3:04 AM');
+    expect(
+      formatTimestamp(DateTime(2026, 12, 31, 0, 5)), //
+      '31 Dec 2026, 12:05 AM',
+    );
+    expect(
+      formatTimestamp(DateTime(2026, 6, 9, 12, 0)),
+      '9 Jun 2026, 12:00 PM',
+    );
+    expect(
+      formatTimestamp(DateTime(2026, 6, 9, 23, 59)),
+      '9 Jun 2026, 11:59 PM',
+    );
   });
 }
