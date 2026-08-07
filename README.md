@@ -19,21 +19,24 @@ opened.
 
 ## The flow
 
-Zero taps, no interstitial screens. Which path runs is decided once, at the
-start, by trying to open both cameras:
+One tap, no interstitial screens: the first viewfinder waits for a shutter
+tap so nobody gets photographed before they're ready, and everything after
+that tap is automatic. Which path runs is decided once, at the start, by
+trying to open both cameras:
 
 **Simultaneous** — Android devices with concurrent-camera support (Pixel 6+,
 Galaxy S22+, …), iPhone XS / A12 and later:
 
 1. Both previews come up at once: back full-bleed with the selfie inset.
-2. One countdown runs, then **both shutters fire together** — the two photos
-   are milliseconds apart.
+2. Tap the shutter; one countdown runs, then **both shutters fire
+   together** — the two photos are milliseconds apart.
 
 **Sequential** — everything else:
 
-1. The front camera opens, counts down, and takes the selfie itself.
+1. The front camera opens; tap the shutter and it counts down and takes the
+   selfie itself.
 2. The back camera opens by itself, prompts *"Turn the phone around"*, counts
-   down again, and fires.
+   down and fires — no second tap, your hands are busy.
 
 Either way, lat/long (fetched in parallel while shooting; falls back to last
 known, then to none) and a timestamp are attached, and you get one
@@ -44,12 +47,11 @@ if your app needs the two shots to prove "same moment".
 
 Two steps, because a hardware flag is a claim and not a guarantee:
 
-1. **Ask the platform.** Android checks
-   `CameraManager.getConcurrentCameraIds()` (API 30+, falling back to the
-   `FEATURE_CAMERA_CONCURRENT` system feature) and requires a combination
-   that holds a front *and* a back camera — some devices report concurrency
-   for two back lenses, which is useless here. iOS checks
-   `AVCaptureMultiCamSession.isMultiCamSupported`.
+1. **Ask the platform.** Android checks the `FEATURE_CAMERA_CONCURRENT`
+   system feature — the same gate CameraX's concurrent binding uses.
+   (`getConcurrentCameraIds()` is deliberately not consulted: plenty of
+   hardware that streams front+back fine returns an empty set there.) iOS
+   checks `AVCaptureMultiCamSession.isMultiCamSupported`.
 2. **Then actually start the session.** If it fails, the flow releases both
    cameras and runs sequentially instead.
 
@@ -147,16 +149,18 @@ Every field:
 
 ## Saving as one image
 
-Wrap the view in a `RepaintBoundary` and call `saveComposedDualShot` — it
-snapshots exactly what is on screen, so the PNG matches the style you chose,
-and lands next to the captured photos in the app cache.
+Hand a key to `DualShotView.boundaryKey` and call `saveComposedDualShot` —
+it snapshots the card exactly (full photo + footer, no surrounding margins),
+so the PNG matches the style you chose, and lands next to the captured
+photos in the app cache.
 
 ```dart
 final viewKey = GlobalKey();
 
-RepaintBoundary(
-  key: viewKey,
-  child: DualShotView(result: result, style: DualShotStyle.light),
+DualShotView(
+  result: result,
+  style: DualShotStyle.light,
+  boundaryKey: viewKey,
 )
 
 // later, e.g. from a Save button:
@@ -190,10 +194,13 @@ GuidedDualCaptureFlow(
 
 ## Permissions
 
-Camera permission is requested automatically on first use; if denied, the
-flow shows a retry screen (`DualCaptureLabels.cameraDenied`). Location
-permission is requested before the fix; if denied or unavailable the capture
-still succeeds with `latitude`/`longitude` as `null`.
+Camera permission is requested automatically on first use — by the plugin
+itself on the simultaneous path, by the `camera` plugin on the sequential
+one; if denied, the flow shows a retry screen
+(`DualCaptureLabels.cameraDenied`). Location permission is requested only
+after a camera is live (the OS shows one permission dialog at a time); if
+denied or unavailable the capture still succeeds with
+`latitude`/`longitude` as `null`.
 
 Declare in your app:
 
@@ -206,11 +213,6 @@ Declare in your app:
 <!-- for the map thumbnail -->
 <uses-permission android:name="android.permission.INTERNET" />
 ```
-
-The native session needs `CAMERA` granted before it starts; the `camera`
-plugin asks for it on the sequential path, so request it at runtime (e.g.
-with `permission_handler`) if the first capture on a device might be a
-simultaneous one.
 
 **iOS** (`ios/Runner/Info.plist`):
 
@@ -257,11 +259,3 @@ sequential path never enters native code at all.
 - **iOS**: deployment target 12.0; simultaneous needs iOS 13+ on an A12 or
   later device.
 
-## Credits
-
-The simultaneous-capture approach — the Android/iOS support matrix and the
-CameraX concurrent binding pattern — follows
-[`dual_cameras`](https://github.com/RomanSlack/dual_cameras) by Roman Slack,
-a native GPU-composited dual-camera *video* recorder. This package is
-stills-only and composes in Dart, so it needs neither the GL/Metal
-compositor nor the encoder pipeline that project is built around.

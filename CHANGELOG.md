@@ -1,3 +1,62 @@
+## 0.6.0
+
+* **Camera permission is now actually requested on the simultaneous path.**
+  The native session binds the cameras directly, so nothing ever showed the
+  OS camera dialog — and the location request fired in parallel cancelled
+  the `camera` plugin's request on the fallback path too, so users only ever
+  saw the location popup. The plugin now requests `CAMERA` itself before
+  starting the native session (Android and iOS), and the location request
+  waits until a camera is live so the two dialogs never collide. A denial
+  shows the existing retry screen.
+* **No more stale location on captures.** The `getLastKnownPosition`
+  fallback is gone: it could stamp a shot with a fix from hours ago (or the
+  emulator's default). A capture now carries a real current fix or a null
+  `latitude`/`longitude`, never a guess.
+* **The first viewfinder now waits for a shutter tap.** Opening straight
+  into a countdown photographed people before they were ready. The first
+  page (the only page in simultaneous mode, the selfie page in sequential)
+  shows a classic shutter button and a `DualCaptureLabels.tapToStart` hint;
+  everything after the tap is automatic as before — the back page still
+  counts down on its own, since the user's hands are busy turning the
+  phone.
+* **Smoother viewfinder on old devices.** Countdown ticks now repaint only
+  the ring (a `ValueNotifier` instead of whole-page `setState`), and each
+  live preview sits behind its own `RepaintBoundary` so overlay repaints
+  never touch the camera layers. The composed view's back photo uses
+  `gaplessPlayback`, so restyling never flashes an empty frame.
+* The example app no longer ships a language switcher — every string was
+  already the developer's to supply via `DualCaptureLabels`; pass your own
+  to reword or translate.
+* **Simultaneous support is no longer under-reported.** The Android probe
+  used to require a front+back combination in
+  `CameraManager.getConcurrentCameraIds()`, which is empty on plenty of
+  hardware (and the emulator) that streams front+back just fine — so `auto`
+  said "this device can't" on devices that could. The probe now checks
+  exactly what CameraX's concurrent `bindToLifecycle` checks:
+  `FEATURE_CAMERA_CONCURRENT`. The same wrong gate inside the native
+  session (`availableConcurrentCameraInfos`) is gone too; actually binding
+  the cameras remains the final arbiter, so overclaiming devices still fall
+  back cleanly.
+* **The back photo is no longer cropped by the layout.** `DualShotView`
+  used to cover-fit the photo into whatever box its parent gave it, which
+  shaved the top and bottom off every shot whose aspect didn't match — read
+  as "the footer cut off the bottom of my photo". The card now takes its
+  shape from the photo itself (full photo, footer below) and scales down as
+  a whole when the parent is shorter. New `DualShotView.boundaryKey` puts
+  the `saveComposedDualShot` boundary on the card itself so the saved PNG
+  has no empty margins; wrapping the view in your own `RepaintBoundary`
+  still works.
+* Simultaneous previews are laid out at the size the native side actually
+  reports instead of an assumed 1080×1440, fixing stretched/cropped
+  previews on devices with other preview resolutions (the sizes were
+  already sent, then ignored — and on Android they were also racy, now read
+  post-bind from `resolutionInfo`).
+* A simultaneous start that times out now tells the native side to stand
+  down instead of letting it finish binding both cameras with nobody
+  listening.
+* Failures on the simultaneous path are `debugPrint`ed instead of
+  swallowed silently, so "why did it fall back?" is answerable from logs.
+
 ## 0.5.0
 
 * **The simultaneous path is now native.** 0.4.0 tried to run two

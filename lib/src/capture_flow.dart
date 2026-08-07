@@ -19,8 +19,12 @@ import 'support.dart';
 /// * **Sequential** (everything else): the front camera opens, counts down and
 ///   shoots itself, then the back camera does the same.
 ///
-/// Either way the user taps nothing, [onComplete] receives the same
-/// [DualShotResult], and [DualShotView] renders it identically —
+/// Either way the user taps exactly once: the first viewfinder shows a
+/// shutter button and waits — opening straight into a countdown shot people
+/// before they were ready. From that tap on everything is automatic (the
+/// back page counts down by itself, since the user's hands are busy turning
+/// the phone). [onComplete] receives the same [DualShotResult] and
+/// [DualShotView] renders it identically —
 /// [DualShotResult.wasSimultaneous] is the only tell.
 ///
 /// Support is decided in two steps: [DualCameraSupport] asks the platform
@@ -38,10 +42,13 @@ import 'support.dart';
 /// Pass [DualCaptureMode.sequential] to skip all of this, which is the right
 /// call on old and low-RAM phones.
 ///
-/// Permissions: the camera plugin requests camera access on first use; a
-/// denial shows a retry screen ([DualCaptureLabels.cameraDenied]). Location
-/// is requested in parallel and degrades to a null lat/long instead of
-/// failing the capture.
+/// Permissions: camera access is requested up front — natively on the
+/// simultaneous path, by the camera plugin on the sequential one — and a
+/// denial shows a retry screen ([DualShotResult] is never produced without
+/// it; see [DualCaptureLabels.cameraDenied]). Location is requested only
+/// after a camera is live, because the OS shows one permission dialog at a
+/// time and a location request fired alongside the camera one cancels it.
+/// Location degrades to a null lat/long instead of failing the capture.
 class GuidedDualCaptureFlow extends StatefulWidget {
   const GuidedDualCaptureFlow({
     super.key,
@@ -60,9 +67,10 @@ class GuidedDualCaptureFlow extends StatefulWidget {
   /// Whether to try both cameras at once. See [DualCaptureMode].
   final DualCaptureMode mode;
 
-  /// How long the user gets to pose (and, in sequential mode, to turn the
-  /// phone around) after each camera opens. [Duration.zero] shoots as soon as
-  /// the preview is live.
+  /// How long the user gets to pose after tapping the shutter (and, in
+  /// sequential mode, to turn the phone around before the automatic back
+  /// shot). [Duration.zero] makes the tap shoot immediately and the back
+  /// shot fire as soon as its preview is live.
   ///
   /// ponytail: one delay for every shot — split it if turning the phone
   /// around needs longer than posing does.
@@ -109,11 +117,21 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   _Stage _stage = _Stage.probing;
   XFile? _frontShot;
   bool _busy = false;
-  late final Future<Position?> _positionFuture;
+
+  /// The GPS fix, started once a camera is live — never earlier, so its
+  /// permission dialog can't collide with (and cancel) the camera one.
+  Future<Position?>? _positionFuture;
   Timer? _countdownTimer;
 
   /// Seconds still to go before the automatic shot; 0 means none pending.
-  int _secondsLeft = 0;
+  /// A notifier rather than setState so each tick repaints only the
+  /// countdown ring, not the whole viewfinder with its live previews.
+  final ValueNotifier<int> _secondsLeft = ValueNotifier<int>(0);
+
+  /// The first viewfinder waits for a shutter tap instead of counting down
+  /// on its own — opening straight into a countdown shot people before they
+  /// were ready. Everything after that tap stays automatic.
+  bool _awaitingShutter = false;
 
   /// Set when the caller asked for [DualCaptureMode.auto] but this device
   /// can't deliver it — drives the one-time notice on the viewfinder.
@@ -125,9 +143,6 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Start the GPS fix now — it warms up while the user takes both photos,
-    // so the finishing step usually awaits an already-resolved future.
-    _positionFuture = _locate();
     availableCameras().then((cams) {
       if (!mounted) return;
       _cameras = cams;
@@ -138,6 +153,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _secondsLeft.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     if (_nativePreview != null) DualCameraSupport.stopSimultaneous();
@@ -171,6 +187,15 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
           await DualCameraSupport.supportsSimultaneousCapture();
       if (!mounted) return;
       if (platformSaysYes) {
+        // The native session binds the cameras directly and never triggers
+        // the OS permission dialog on its own — settle it here, unbounded,
+        // before the time-limited start attempt.
+        final granted = await DualCameraSupport.ensureCameraPermission();
+        if (!mounted) return;
+        if (!granted) {
+          setState(() => _stage = _Stage.cameraDenied);
+          return;
+        }
         if (await _openBoth()) return;
         if (!mounted) return;
       }
@@ -186,7 +211,19 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   void _cancelCountdown() {
     _countdownTimer?.cancel();
     _countdownTimer = null;
-    _secondsLeft = 0;
+    _secondsLeft.value = 0;
+  }
+
+  /// Show the shutter button and wait for the user.
+  void _armShutter() {
+    _cancelCountdown();
+    setState(() => _awaitingShutter = true);
+  }
+
+  /// The shutter tap: from here on the flow is automatic again.
+  void _onShutterTap() {
+    setState(() => _awaitingShutter = false);
+    _startCountdown();
   }
 
   /// Counts down out loud on screen, then takes the shot itself. Restarted
@@ -199,14 +236,14 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
       _shoot();
       return;
     }
-    setState(() => _secondsLeft = seconds);
+    _secondsLeft.value = seconds;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      setState(() => _secondsLeft--);
-      if (_secondsLeft <= 0) {
+      _secondsLeft.value--;
+      if (_secondsLeft.value <= 0) {
         _cancelCountdown();
         _shoot();
       }
@@ -253,7 +290,13 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     await _releaseCameras();
     final preview = await DualCameraSupport.startSimultaneous().timeout(
       _openTimeout,
-      onTimeout: () => null, // a device that hangs is a device that can't
+      onTimeout: () {
+        // A device that hangs is a device that can't — but the native start
+        // is still in flight, and left alone it would eventually bind both
+        // cameras with nobody listening. Tell it to stand down.
+        DualCameraSupport.stopSimultaneous();
+        return null;
+      },
     );
     if (preview == null) return false;
     if (!mounted) {
@@ -262,7 +305,8 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     }
     _nativePreview = preview;
     setState(() => _stage = _Stage.bothShoot);
-    _startCountdown();
+    _ensureLocating(); // camera dialog is settled; location's turn
+    _armShutter(); // the one page there is: wait for the user's tap
     return true;
   }
 
@@ -283,7 +327,12 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
       await controller.initialize();
       if (!mounted) return;
       setState(() {});
-      _startCountdown(); // hands-free: the preview is live, so start counting
+      _ensureLocating(); // camera dialog is settled; location's turn
+      if (_stage == _Stage.frontShoot) {
+        _armShutter(); // first page: the user starts it
+      } else {
+        _startCountdown(); // back page: hands are busy turning the phone
+      }
     } on CameraException catch (e) {
       _controller = null;
       if (e.code.toLowerCase().contains('denied')) {
@@ -353,11 +402,13 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     required bool simultaneous,
   }) async {
     setState(() => _stage = _Stage.finishing);
-    // The fix has been warming up since the flow opened; if it still isn't in
-    // after 2s, take the instant last-known position instead.
-    final position = await _positionFuture.timeout(
+    // The fix has been warming up since the first camera opened; if it still
+    // isn't in after 2s the shot goes out without one. No last-known
+    // fallback: a stale fix stamps a location the photo wasn't taken at.
+    _ensureLocating();
+    final position = await _positionFuture!.timeout(
       const Duration(seconds: 2),
-      onTimeout: _lastKnown,
+      onTimeout: () => null,
     );
     // User backed out while we waited for the fix — drop the result rather
     // than calling onComplete against a dead context.
@@ -372,6 +423,13 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
         wasSimultaneous: simultaneous,
       ),
     );
+  }
+
+  /// Start the GPS fix if it hasn't been started yet. Called when a camera
+  /// comes up (so the location dialog never races the camera one) and again
+  /// in [_finish] as a belt-and-braces for paths that skipped it.
+  void _ensureLocating() {
+    _positionFuture ??= _locate();
   }
 
   Future<Position?> _locate() async {
@@ -393,14 +451,6 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
           timeLimit: Duration(seconds: 10),
         ),
       );
-    } catch (_) {
-      return _lastKnown();
-    }
-  }
-
-  Future<Position?> _lastKnown() async {
-    try {
-      return await Geolocator.getLastKnownPosition();
     } catch (_) {
       return null;
     }
@@ -473,13 +523,17 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   /// Full-bleed preview from the `camera` plugin (sequential path): cover the
   /// screen instead of letterboxing.
   Widget _preview(CameraController controller) {
-    return FittedBox(
-      fit: BoxFit.cover,
-      clipBehavior: Clip.hardEdge,
-      child: SizedBox(
-        width: controller.value.previewSize!.height,
-        height: controller.value.previewSize!.width,
-        child: CameraPreview(controller),
+    // RepaintBoundary: the countdown/overlay repaints must not repaint the
+    // camera layer, and vice versa — this is what keeps old devices smooth.
+    return RepaintBoundary(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: controller.value.previewSize!.height,
+          height: controller.value.previewSize!.width,
+          child: CameraPreview(controller),
+        ),
       ),
     );
   }
@@ -488,18 +542,23 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   /// texture carries raw sensor frames on Android, so the rotation the
   /// platform reported has to be applied here; iOS reports 0 because the
   /// capture connection already delivers portrait.
-  Widget _texturePreview(int textureId, int rotation) {
-    return FittedBox(
-      fit: BoxFit.cover,
-      clipBehavior: Clip.hardEdge,
-      child: RotatedBox(
-        quarterTurns: (rotation ~/ 90) % 4,
-        // Sized so FittedBox has an intrinsic box to scale; the aspect is
-        // corrected by the cover fit.
-        child: SizedBox(
-          width: 1080,
-          height: 1440,
-          child: Texture(textureId: textureId),
+  ///
+  /// [width]×[height] is the texture's own resolution (pre-rotation) as the
+  /// native side reported it — the Texture must be laid out at exactly that
+  /// aspect or the frames are stretched, which showed up as the preview
+  /// looking squashed and cropped.
+  Widget _texturePreview(int textureId, int rotation, int width, int height) {
+    return RepaintBoundary(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: RotatedBox(
+          quarterTurns: (rotation ~/ 90) % 4,
+          child: SizedBox(
+            width: width.toDouble(),
+            height: height.toDouble(),
+            child: Texture(textureId: textureId),
+          ),
         ),
       ),
     );
@@ -515,7 +574,12 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
       fit: StackFit.expand,
       children: [
         if (native != null)
-          _texturePreview(native.backTextureId, native.backRotation)
+          _texturePreview(
+            native.backTextureId,
+            native.backRotation,
+            native.backWidth,
+            native.backHeight,
+          )
         else if (live)
           _preview(controller)
         else
@@ -533,6 +597,8 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
               child: _texturePreview(
                 native.frontTextureId,
                 native.frontRotation,
+                native.frontWidth,
+                native.frontHeight,
               ),
             ),
           ),
@@ -678,16 +744,25 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
                           ),
                         ),
                       ),
-                    _CountdownRing(
-                      secondsLeft: _secondsLeft,
-                      label: _busy || _secondsLeft == 0
-                          ? labels.capturing
-                          : _simultaneous
-                          ? labels.bothCountdown
-                          : (front
-                                ? labels.frontCountdown
-                                : labels.backCountdown),
-                    ),
+                    if (_awaitingShutter)
+                      _ShutterButton(
+                        label: labels.tapToStart,
+                        onTap: _onShutterTap,
+                      )
+                    else
+                      ValueListenableBuilder<int>(
+                        valueListenable: _secondsLeft,
+                        builder: (context, seconds, _) => _CountdownRing(
+                          secondsLeft: seconds,
+                          label: _busy || seconds == 0
+                              ? labels.capturing
+                              : _simultaneous
+                              ? labels.bothCountdown
+                              : (front
+                                    ? labels.frontCountdown
+                                    : labels.backCountdown),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -695,6 +770,52 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The classic shutter, shown on the first viewfinder only: same ring as
+/// [_CountdownRing] so nothing jumps when the tap swaps it for the count.
+class _ShutterButton extends StatelessWidget {
+  const _ShutterButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white24,
+                border: Border.all(color: Colors.white, width: 4),
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                color: Colors.white,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

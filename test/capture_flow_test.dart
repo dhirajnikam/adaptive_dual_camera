@@ -132,7 +132,11 @@ void main() {
   /// whether the native session can actually be started. The [camera] plugin
   /// fake only ever serves the sequential path now — simultaneous capture is
   /// entirely native.
-  void useCamera({required bool concurrent, bool? claimsSupport}) {
+  void useCamera({
+    required bool concurrent,
+    bool? claimsSupport,
+    bool cameraPermission = true,
+  }) {
     camera = _FakeCameraPlatform(dir);
     CameraPlatform.instance = camera;
     DualCameraSupport.resetCache();
@@ -145,6 +149,8 @@ void main() {
             switch (call.method) {
               case 'supportsConcurrentCameras':
                 return claimsSupport ?? concurrent;
+              case 'ensureCameraPermission':
+                return cameraPermission;
               case 'startConcurrent':
                 if (!concurrent) {
                   throw PlatformException(
@@ -198,7 +204,7 @@ void main() {
     }
   }
 
-  testWidgets('sequential hardware: counts down twice, no taps', (
+  testWidgets('sequential hardware: one tap, then two automatic shots', (
     tester,
   ) async {
     DualShotResult? result;
@@ -213,7 +219,14 @@ void main() {
     // Let availableCameras() resolve and the front camera initialize.
     await flush(tester);
 
-    // Counting down towards the selfie, unprompted.
+    // The first page waits for the user instead of firing on its own.
+    expect(find.text('Tap when ready'), findsOneWidget);
+    expect(find.text('3'), findsNothing);
+    expect(camera.shotLenses, isEmpty);
+    await tester.tap(find.byIcon(Icons.camera_alt));
+    await tester.pump();
+
+    // Counting down towards the selfie.
     expect(find.text('3'), findsOneWidget);
     expect(find.text('Taking your selfie…'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
@@ -230,6 +243,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('3'), findsOneWidget); // full delay to turn around
+    // No second tap: the back page counts down on its own.
+    expect(find.text('Tap when ready'), findsNothing);
 
     // Second countdown, second automatic shot, flow completes.
     await tester.pump(const Duration(seconds: 1));
@@ -262,14 +277,24 @@ void main() {
     );
     await flush(tester);
 
-    // The native session owns both cameras, so there is one shared countdown
-    // and the `camera` plugin is never opened at all.
+    // The native session owns both cameras, so the `camera` plugin is never
+    // opened at all — meaning nobody else asks for camera permission, so the
+    // flow itself must, and before the bind.
+    expect(
+      nativeCalls.indexOf('ensureCameraPermission'),
+      lessThan(nativeCalls.indexOf('startConcurrent')),
+    );
     expect(nativeCalls, contains('startConcurrent'));
     expect(camera.peakOpen, 0);
-    expect(find.text('Both photos at once — hold still…'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
     // Both previews are native textures, not CameraPreviews.
     expect(find.byType(Texture), findsNWidgets(2));
+    expect(find.text('Tap when ready'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.camera_alt));
+    await tester.pump();
+
+    // One shared countdown for both shutters.
+    expect(find.text('Both photos at once — hold still…'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
@@ -301,11 +326,36 @@ void main() {
 
     expect(nativeCalls, isEmpty);
     expect(camera.peakOpen, 1);
-    expect(find.text('Taking your selfie…'), findsOneWidget);
     // Explicitly sequential: no notice, because nothing was denied.
     expect(find.textContaining("can't use both cameras"), findsNothing);
+    await tester.tap(find.byIcon(Icons.camera_alt));
+    await tester.pump();
+    expect(find.text('Taking your selfie…'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
     await flush(tester);
+  });
+
+  testWidgets('camera permission denied: retry screen, no native session', (
+    tester,
+  ) async {
+    useCamera(concurrent: true, cameraPermission: false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GuidedDualCaptureFlow(
+          countdown: const Duration(seconds: 3),
+          onComplete: (_) {},
+        ),
+      ),
+    );
+    await flush(tester);
+
+    expect(
+      find.textContaining('Camera access is needed'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+    expect(nativeCalls, isNot(contains('startConcurrent')));
+    expect(camera.peakOpen, 0);
   });
 
   testWidgets('auto on a device that cannot do it says so', (tester) async {
@@ -346,6 +396,9 @@ void main() {
 
     expect(nativeCalls, contains('startConcurrent'));
     expect(find.textContaining("can't use both cameras"), findsOneWidget);
+    expect(find.text('Tap when ready'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.camera_alt));
+    await tester.pump();
     expect(find.text('Taking your selfie…'), findsOneWidget);
 
     // And it still delivers both photos the long way round.
@@ -367,6 +420,7 @@ void main() {
         home: GuidedDualCaptureFlow(
           countdown: const Duration(seconds: 3),
           labels: const DualCaptureLabels(
+            tapToStart: 'तैयार हों तो टैप करें',
             frontCountdown: 'सेल्फ़ी ले रहे हैं…',
           ),
           onComplete: (_) {},
@@ -375,6 +429,9 @@ void main() {
     );
     await flush(tester);
 
+    expect(find.text('तैयार हों तो टैप करें'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.camera_alt));
+    await tester.pump();
     expect(find.text('सेल्फ़ी ले रहे हैं…'), findsOneWidget);
     // Leave no pending timer behind.
     await tester.pump(const Duration(seconds: 3));

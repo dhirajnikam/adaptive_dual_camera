@@ -11,6 +11,7 @@ class DualCaptureLabels {
     this.frontCountdown = 'Taking your selfie…',
     this.backCountdown = 'Turn the phone around — back photo next',
     this.bothCountdown = 'Both photos at once — hold still…',
+    this.tapToStart = 'Tap when ready',
     this.capturing = 'Capturing…',
     this.openingCameras = 'Opening cameras…',
     this.simultaneousUnavailable =
@@ -46,6 +47,11 @@ class DualCaptureLabels {
 
   /// Under the countdown in simultaneous mode.
   final String bothCountdown;
+
+  /// Under the shutter button on the first viewfinder, which waits for a
+  /// tap before its countdown starts. The second (back) viewfinder counts
+  /// down on its own.
+  final String tapToStart;
 
   /// Under the spinner while the shot is actually being taken.
   final String capturing;

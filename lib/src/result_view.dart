@@ -81,17 +81,24 @@ class DualShotStyle {
 /// Renders a [DualShotResult] as
 /// `Column[back photo, Row[front photo, map, lat/long/timestamp]]`.
 ///
+/// The card takes its shape from the back photo: full photo at its own
+/// aspect ratio, footer below. When the parent's box is shorter than that,
+/// the whole card scales down together rather than cropping the photo — a
+/// cover-fit here used to shave the top and bottom off every 16:9 shot,
+/// which read as "the footer ate the bottom of my photo".
+///
 /// The layout is the same whether the two photos were taken simultaneously or
 /// one after the other — [DualShotResult.wasSimultaneous] changes nothing
 /// here on purpose, so a mixed fleet of devices produces one consistent
 /// image.
-class DualShotView extends StatelessWidget {
+class DualShotView extends StatefulWidget {
   const DualShotView({
     super.key,
     required this.result,
     this.showMap = true,
     this.labels = const DualCaptureLabels(),
     this.style = DualShotStyle.dark,
+    this.boundaryKey,
   });
 
   final DualShotResult result;
@@ -106,65 +113,133 @@ class DualShotView extends StatelessWidget {
   /// [DualShotStyle.tall].
   final DualShotStyle style;
 
+  /// Key for [saveComposedDualShot]. Placed on a [RepaintBoundary] around
+  /// the card itself (photo + footer, nothing else), so the saved image has
+  /// no empty margins from whatever box the view happens to be centered in.
+  final GlobalKey? boundaryKey;
+
+  @override
+  State<DualShotView> createState() => _DualShotViewState();
+}
+
+class _DualShotViewState extends State<DualShotView> {
+  /// Back photo width/height as decoded (EXIF applied); 3:4 until known.
+  double _backAspect = 3 / 4;
+
+  ImageProvider? _backProvider;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  DualShotResult get result => widget.result;
+  DualShotStyle get style => widget.style;
+  DualCaptureLabels get labels => widget.labels;
+
   bool get _mapVisible =>
-      showMap && style.showMapInFooter && result.hasLocation;
+      widget.showMap && style.showMapInFooter && result.hasLocation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Decode at display size instead of full camera resolution — much faster
+    // to load and far less memory on old devices. The same provider drives
+    // both the on-screen Image and the aspect lookup, so it decodes once.
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final provider = ResizeImage(
+      FileImage(File(result.backPhoto.path)),
+      width: (MediaQuery.sizeOf(context).width * dpr).round(),
+    );
+    if (provider == _backProvider) return;
+    _backProvider = provider;
+    _stream?.removeListener(_listener!);
+    _listener = ImageStreamListener((info, _) {
+      final aspect = info.image.width / info.image.height;
+      info.dispose();
+      if (mounted && aspect != _backAspect) {
+        setState(() => _backAspect = aspect);
+      }
+    }, onError: (_, _) {});
+    _stream = provider.resolve(ImageConfiguration.empty)
+      ..addListener(_listener!);
+  }
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_listener!);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Decode at display size instead of full camera resolution — much faster
-    // to load and far less memory on old devices.
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final backWidth = (MediaQuery.sizeOf(context).width * dpr).round();
     final cell = style.footerHeight - style.gap * 2;
 
-    return Column(
-      children: [
-        Expanded(
-          child: SizedBox(
-            width: double.infinity,
-            child: Image.file(
-              File(result.backPhoto.path),
-              fit: BoxFit.cover,
-              cacheWidth: backWidth,
-            ),
-          ),
-        ),
-        SizedBox(
-          height: style.footerHeight,
-          child: Container(
-            color: style.footerColor,
-            padding: EdgeInsets.all(style.gap),
-            child: Row(
-              children: [
-                _framed(
-                  child: Image.file(
-                    File(result.frontPhoto.path),
-                    width: cell * 3 / 4,
-                    height: cell,
-                    fit: BoxFit.cover,
-                    cacheHeight: (cell * dpr).round(),
-                  ),
-                ),
-                SizedBox(width: style.gap),
-                if (_mapVisible) ...[
-                  _framed(
+    return LayoutBuilder(
+      builder: (context, box) {
+        final width = box.maxWidth.isFinite ? box.maxWidth : 360.0;
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: RepaintBoundary(
+            key: widget.boundaryKey,
+            child: SizedBox(
+              width: width,
+              height: width / _backAspect + style.footerHeight,
+              child: Column(
+                children: [
+                  Expanded(
                     child: SizedBox(
-                      width: cell,
-                      height: cell,
-                      child: MapThumbnail(
-                        latitude: result.latitude!,
-                        longitude: result.longitude!,
+                      width: double.infinity,
+                      // The box above matches the photo's aspect exactly, so
+                      // this cover neither crops nor letterboxes. Gapless so
+                      // the aspect settling or a style switch never flashes
+                      // an empty frame.
+                      child: Image(
+                        image: _backProvider!,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
                       ),
                     ),
                   ),
-                  SizedBox(width: style.gap),
+                  SizedBox(
+                    height: style.footerHeight,
+                    child: Container(
+                      color: style.footerColor,
+                      padding: EdgeInsets.all(style.gap),
+                      child: Row(
+                        children: [
+                          _framed(
+                            child: Image.file(
+                              File(result.frontPhoto.path),
+                              width: cell * 3 / 4,
+                              height: cell,
+                              fit: BoxFit.cover,
+                              cacheHeight: (cell * dpr).round(),
+                            ),
+                          ),
+                          SizedBox(width: style.gap),
+                          if (_mapVisible) ...[
+                            _framed(
+                              child: SizedBox(
+                                width: cell,
+                                height: cell,
+                                child: MapThumbnail(
+                                  latitude: result.latitude!,
+                                  longitude: result.longitude!,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: style.gap),
+                          ],
+                          Expanded(child: _details()),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
-                Expanded(child: _details()),
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -232,15 +307,19 @@ class DualShotView extends StatelessWidget {
 }
 
 /// Saves the composed layout as ONE image file (PNG), next to the captured
-/// photos in the app's cache. Wrap the on-screen [DualShotView] in a
-/// [RepaintBoundary] with [boundaryKey]:
+/// photos in the app's cache. Hand the key to [DualShotView.boundaryKey] —
+/// it sits on a boundary around the card itself, so the saved image is
+/// exactly photo + footer with no margins from the surrounding box:
 ///
 /// ```dart
 /// final key = GlobalKey();
-/// RepaintBoundary(key: key, child: DualShotView(result: result))
+/// DualShotView(result: result, boundaryKey: key)
 /// ...
 /// final file = await saveComposedDualShot(key, result);
 /// ```
+///
+/// (Wrapping the whole view in your own [RepaintBoundary] still works, but
+/// captures whatever empty space surrounds the centered card.)
 ///
 /// It snapshots whatever is on screen, so the PNG matches the view's
 /// [DualShotStyle] exactly. [pixelRatio] trades file size for sharpness.

@@ -33,6 +33,21 @@ public class AdaptiveDualCameraPlugin: NSObject, FlutterPlugin {
         result(false)
       }
 
+    case "ensureCameraPermission":
+      // The native session drives AVFoundation directly, so nothing else on
+      // the simultaneous path ever triggers the OS permission prompt — this
+      // does, before the first session start.
+      switch AVCaptureDevice.authorizationStatus(for: .video) {
+      case .authorized:
+        result(true)
+      case .notDetermined:
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+          DispatchQueue.main.async { result(granted) }
+        }
+      default:
+        result(false)
+      }
+
     case "startConcurrent":
       guard #available(iOS 13.0, *) else {
         result(FlutterError(code: "unsupported", message: "Needs iOS 13+", details: nil))

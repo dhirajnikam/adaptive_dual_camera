@@ -1,6 +1,6 @@
 name: adaptive_dual_camera
 description: "Hands-free front + back photo capture with location and timestamp — native simultaneous capture where the hardware allows it, sequential everywhere else, and the same composed layout either way."
-version: 0.5.0
+version: 0.6.0
 homepage: https://github.com/dhirajnikam/adaptive_dual_camera
 repository: https://github.com/dhirajnikam/adaptive_dual_camera
 issue_tracker: https://github.com/dhirajnikam/adaptive_dual_camera/issues

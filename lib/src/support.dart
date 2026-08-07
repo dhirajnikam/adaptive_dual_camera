@@ -10,6 +10,10 @@ class NativeDualPreview {
     required this.backTextureId,
     required this.frontRotation,
     required this.backRotation,
+    this.frontWidth = 1080,
+    this.frontHeight = 1440,
+    this.backWidth = 1080,
+    this.backHeight = 1440,
   });
 
   final int frontTextureId;
@@ -19,6 +23,15 @@ class NativeDualPreview {
   /// delivers portrait frames.
   final int frontRotation;
   final int backRotation;
+
+  /// Texture dimensions in pixels, BEFORE the rotation above is applied —
+  /// Android reports the sensor-oriented preview size here. The previews
+  /// must be laid out at this aspect or the image is stretched. iOS omits
+  /// them and gets the 3:4 portrait default its connection delivers.
+  final int frontWidth;
+  final int frontHeight;
+  final int backWidth;
+  final int backHeight;
 }
 
 /// The simultaneous capture path, which is the package's only native code.
@@ -59,8 +72,26 @@ class DualCameraSupport {
       return _cached = supported ?? false;
     } on MissingPluginException {
       return _cached = false; // unsupported platform, or a test
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      debugPrint('adaptive_dual_camera: support probe failed: $e');
       return _cached = false;
+    }
+  }
+
+  /// Settle the OS camera permission before [startSimultaneous] binds the
+  /// cameras natively — nothing else on the simultaneous path ever shows the
+  /// dialog (the `camera` plugin only asks when *it* opens a camera, which
+  /// the native session bypasses). Returns false only on an explicit denial.
+  static Future<bool> ensureCameraPermission() async {
+    try {
+      // Only an explicit false is a denial; a null answer (older native
+      // implementation, or a test) lets the start attempt settle it.
+      return await _channel.invokeMethod<bool>('ensureCameraPermission') !=
+          false;
+    } on MissingPluginException {
+      return true; // no native side — the `camera` plugin will ask instead
+    } on PlatformException {
+      return true;
     }
   }
 
@@ -79,10 +110,17 @@ class DualCameraSupport {
         backTextureId: info['backTextureId'] as int,
         frontRotation: (info['frontRotation'] as int?) ?? 0,
         backRotation: (info['backRotation'] as int?) ?? 0,
+        frontWidth: (info['frontWidth'] as int?) ?? 1080,
+        frontHeight: (info['frontHeight'] as int?) ?? 1440,
+        backWidth: (info['backWidth'] as int?) ?? 1080,
+        backHeight: (info['backHeight'] as int?) ?? 1440,
       );
-    } catch (_) {
+    } catch (e) {
       // A device that claimed support and then failed to deliver it. The
-      // native side has already released whatever it opened.
+      // native side has already released whatever it opened. Say why in
+      // debug builds — this used to vanish silently, which made "why did it
+      // fall back?" undiagnosable.
+      debugPrint('adaptive_dual_camera: startConcurrent failed: $e');
       return null;
     }
   }

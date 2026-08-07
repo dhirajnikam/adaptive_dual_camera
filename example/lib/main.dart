@@ -19,30 +19,6 @@ class MyApp extends StatelessWidget {
   );
 }
 
-/// Demonstrates [DualCaptureLabels]: every user-visible string is
-/// overridable, so translation is just another labels object.
-const _localizedLabels = <String, DualCaptureLabels>{
-  'English': DualCaptureLabels(),
-  'हिन्दी': DualCaptureLabels(
-    frontPrompt: 'अपना चेहरा दिखाएँ',
-    backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
-    bothPrompt: 'अपना चेहरा और सामने का दृश्य दोनों दिखाएँ',
-    frontCountdown: 'सेल्फ़ी ली जा रही है…',
-    backCountdown: 'फ़ोन घुमाएँ — अब पीछे का फ़ोटो',
-    bothCountdown: 'दोनों फ़ोटो एक साथ — स्थिर रहें…',
-    capturing: 'फ़ोटो लिया जा रहा है…',
-    openingCameras: 'कैमरे खुल रहे हैं…',
-    simultaneousUnavailable:
-        'यह फ़ोन दोनों कैमरे एक साथ नहीं चला सकता — '
-        'फ़ोटो बारी-बारी से लिए जाएँगे',
-    gettingLocation: 'स्थान प्राप्त हो रहा है…',
-    cameraDenied:
-        'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
-    retry: 'फिर से कोशिश करें',
-    locationUnavailable: 'स्थान उपलब्ध नहीं',
-  ),
-};
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -51,8 +27,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  String _language = 'English';
-
   // Medium suits most phones; low keeps very old devices smooth.
   ResolutionPreset _resolution = ResolutionPreset.medium;
 
@@ -70,13 +44,12 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  DualCaptureLabels get _labels => _localizedLabels[_language]!;
-
   Future<void> _startCapture() async {
     final result = await Navigator.of(context).push<DualShotResult>(
       MaterialPageRoute(
+        // Every user-visible string is yours to supply: pass
+        // `labels: DualCaptureLabels(...)` to reword or translate them.
         builder: (context) => GuidedDualCaptureFlow(
-          labels: _labels,
           resolution: _resolution,
           mode: _mode,
           onComplete: (r) => Navigator.of(context).pop(r),
@@ -90,9 +63,7 @@ class _HomePageState extends State<HomePage> {
     );
     if (result != null && mounted) {
       await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => ResultPage(result: result, labels: _labels),
-        ),
+        MaterialPageRoute(builder: (context) => ResultPage(result: result)),
       );
     }
   }
@@ -105,17 +76,6 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(16),
         children: [
           const _HowItWorksCard(),
-          const SizedBox(height: 16),
-          Text('Language', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          SegmentedButton<String>(
-            segments: [
-              for (final language in _localizedLabels.keys)
-                ButtonSegment(value: language, label: Text(language)),
-            ],
-            selected: {_language},
-            onSelectionChanged: (s) => setState(() => _language = s.first),
-          ),
           const SizedBox(height: 16),
           Text(
             'Camera resolution',
@@ -205,7 +165,7 @@ class _HowItWorksCard extends StatelessWidget {
         'Both cameras at once where the phone supports it',
       ),
       (Icons.looks_two, 'Otherwise selfie first, then the back photo'),
-      (Icons.place, 'Same layout either way — no taps at all'),
+      (Icons.place, 'Same layout either way — one tap starts it'),
     ];
     return Card(
       child: Padding(
@@ -238,10 +198,9 @@ class _HowItWorksCard extends StatelessWidget {
 
 /// Shows the composed result and can save it as one image.
 class ResultPage extends StatefulWidget {
-  const ResultPage({super.key, required this.result, required this.labels});
+  const ResultPage({super.key, required this.result});
 
   final DualShotResult result;
-  final DualCaptureLabels labels;
 
   @override
   State<ResultPage> createState() => _ResultPageState();
@@ -288,14 +247,11 @@ class _ResultPageState extends State<ResultPage> {
                 child: Card(
                   clipBehavior: Clip.antiAlias,
                   margin: EdgeInsets.zero,
-                  child: RepaintBoundary(
-                    key: _viewKey,
-                    child: DualShotView(
-                      result: widget.result,
-                      labels: widget.labels,
-                      style: _style,
-                      showMap: _showMap,
-                    ),
+                  child: DualShotView(
+                    result: widget.result,
+                    style: _style,
+                    showMap: _showMap,
+                    boundaryKey: _viewKey,
                   ),
                 ),
               ),

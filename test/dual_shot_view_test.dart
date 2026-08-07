@@ -120,7 +120,11 @@ void main() {
 
     // Column: the back photo sits entirely above the footer row.
     expect(back.bottom, lessThanOrEqualTo(front.top));
-    expect(back.width, tester.getSize(find.byType(DualShotView)).width);
+    // The photo's box keeps a photo aspect instead of stretching to
+    // whatever the parent gives — that stretch is what used to cover-crop
+    // the top and bottom off the shot. (3:4 is the placeholder aspect; the
+    // decode never completes inside a widget test.)
+    expect(back.width / back.height, closeTo(3 / 4, 0.01));
     // Row: front photo, then map, then the text — left to right, and all
     // three below the back photo rather than overlaid on it.
     expect(front.left, lessThan(map.left));

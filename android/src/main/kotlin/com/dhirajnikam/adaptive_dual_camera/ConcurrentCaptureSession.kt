@@ -48,6 +48,9 @@ class ConcurrentCaptureSession(
   var isRunning = false
     private set
 
+  /** Set by [stop]; a bind still in flight must abandon itself. */
+  @Volatile private var stopped = false
+
   /**
    * Bind both cameras. [onReady] receives the texture ids and each preview's
    * dimensions and sensor rotation, which Dart needs to orient the previews.
@@ -63,36 +66,35 @@ class ConcurrentCaptureSession(
     val future = ProcessCameraProvider.getInstance(context)
     future.addListener({
       try {
+        // The Dart side gave up (timeout) and already called stop(); binding
+        // now would hold both cameras with nobody listening.
+        if (stopped) return@addListener
+
         val cameraProvider = future.get()
         provider = cameraProvider
         cameraProvider.unbindAll()
 
-        if (cameraProvider.availableConcurrentCameraInfos.isEmpty()) {
-          throw IllegalStateException("No concurrent camera combination")
-        }
+        // Deliberately no availableConcurrentCameraInfos gate here: it is
+        // fed by getConcurrentCameraIds(), which is empty on plenty of
+        // hardware that binds front+back just fine. bindToLifecycle below
+        // is the real arbiter and throws on devices that truly can't.
 
         val back = textures.createSurfaceProducer()
         val front = textures.createSurfaceProducer()
         backTexture = back
         frontTexture = front
 
-        val dims = HashMap<String, Any>()
-
         // Let each camera run its native resolution; Dart's BoxFit.cover
         // crops. Forcing an aspect makes the HAL pre-stretch the sensor.
         val backPreview = Preview.Builder().build().also { preview ->
           preview.setSurfaceProvider(mainExecutor) { request ->
             back.setSize(request.resolution.width, request.resolution.height)
-            dims["backWidth"] = request.resolution.width
-            dims["backHeight"] = request.resolution.height
             request.provideSurface(back.surface, mainExecutor) {}
           }
         }
         val frontPreview = Preview.Builder().build().also { preview ->
           preview.setSurfaceProvider(mainExecutor) { request ->
             front.setSize(request.resolution.width, request.resolution.height)
-            dims["frontWidth"] = request.resolution.width
-            dims["frontHeight"] = request.resolution.height
             request.provideSurface(front.surface, mainExecutor) {}
           }
         }
@@ -125,6 +127,19 @@ class ConcurrentCaptureSession(
         val bound = cameraProvider.bindToLifecycle(configs)
         if (bound.cameras.size < 2) {
           throw IllegalStateException("Only ${bound.cameras.size} camera bound")
+        }
+
+        // Read sizes from resolutionInfo after binding rather than inside
+        // the surface-provider callback — that callback can land after
+        // onReady, which would hand Dart a map with no dimensions in it.
+        val dims = HashMap<String, Any>()
+        backPreview.resolutionInfo?.resolution?.let {
+          dims["backWidth"] = it.width
+          dims["backHeight"] = it.height
+        }
+        frontPreview.resolutionInfo?.resolution?.let {
+          dims["frontWidth"] = it.width
+          dims["frontHeight"] = it.height
         }
         for (camera in bound.cameras) {
           val info = camera.cameraInfo
@@ -216,6 +231,7 @@ class ConcurrentCaptureSession(
   }
 
   fun stop() {
+    stopped = true
     isRunning = false
     try {
       provider?.unbindAll()
