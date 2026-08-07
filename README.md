@@ -11,15 +11,25 @@ phones: only one camera controller is ever alive, previews default to
 
 ## The flow
 
-Two taps total, no interstitial screens:
+Hands-free — zero taps, no interstitial screens:
 
-1. The front camera opens immediately with a hint banner: *"Show your
-   face"* → tap the shutter.
-2. The back camera opens automatically: *"Point at what you want to
-   capture"* → tap again.
+1. The front camera opens immediately with a hint banner (*"Show your
+   face"*) and a 3-second countdown. The selfie is taken automatically.
+2. The back camera opens by itself and counts down again, prompting *"Turn
+   the phone around — back photo next"*. The second shot fires on its own.
 3. Lat/long (fetched in parallel while shooting; falls back to last known,
    then to none) and a timestamp are attached, and you get a
    `DualShotResult`.
+
+Tune the pose time with `countdown:` (default 3 seconds; `Duration.zero`
+shoots as soon as each preview is live):
+
+```dart
+GuidedDualCaptureFlow(
+  countdown: const Duration(seconds: 5),  // more time to turn around
+  onComplete: (result) => ...,
+)
+```
 
 `DualShotView` renders the result GPS-camera style:
 

@@ -1,6 +1,6 @@
 name: adaptive_dual_camera
 description: "Guided front-then-back photo capture with location and timestamp, composed from the official camera and geolocator plugins. Pure Dart, no custom native code, tuned for low-end devices."
-version: 0.2.0
+version: 0.3.0
 homepage: https://github.com/dhirajnikam/adaptive_dual_camera
 repository: https://github.com/dhirajnikam/adaptive_dual_camera
 issue_tracker: https://github.com/dhirajnikam/adaptive_dual_camera/issues
@@ -22,6 +22,8 @@ dependencies:
   geolocator: ^14.0.3
 
 dev_dependencies:
+  # Lets the tests swap in a fake camera; ships with `camera` at runtime.
+  camera_platform_interface: ^2.13.1
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0

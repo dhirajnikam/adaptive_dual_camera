@@ -2,8 +2,9 @@
 
 Demonstrates the full `adaptive_dual_camera` API:
 
-- **Guided capture** — `GuidedDualCaptureFlow` prompts for a front (selfie)
-  photo, then a back photo, then stamps location + timestamp.
+- **Hands-free capture** — `GuidedDualCaptureFlow` counts down and takes the
+  selfie by itself, switches to the back camera, counts down again, shoots
+  again, then stamps location + timestamp. The user never taps a shutter.
 - **Localization** — a language toggle (English / हिन्दी) swaps the
   `DualCaptureLabels` object; every visible string changes.
 - **Old-device tuning** — a resolution picker (`low` / `medium` / `high`)

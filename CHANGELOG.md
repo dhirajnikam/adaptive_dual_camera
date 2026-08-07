@@ -1,3 +1,23 @@
+## 0.3.0
+
+* **Hands-free capture — behavior change.** `GuidedDualCaptureFlow` no longer
+  waits for shutter taps. Each camera opens, a countdown runs on screen, and
+  the photo is taken automatically: selfie, then back photo, then done. Zero
+  taps for the whole flow.
+* New `countdown` parameter (default 3 seconds) sets how long the user gets
+  to pose and to turn the phone around; `Duration.zero` shoots as soon as the
+  preview is live.
+* The shutter button is replaced by a countdown ring that shows the seconds
+  remaining, then a spinner while the shot is taken.
+* `DualCaptureLabels` gains `frontCountdown`, `backCountdown` and
+  `capturing` for the new on-screen text. Existing labels are unchanged, so
+  only apps that want the new strings translated need to touch them.
+* Backgrounding mid-count cancels the countdown and restarts it with the
+  camera on resume, so the app never shoots at the inside of a pocket.
+* Tests: a fake `CameraPlatform` drives the whole flow, proving both photos
+  are captured with no taps (`camera_platform_interface` is now a
+  dev dependency).
+
 ## 0.2.0
 
 * New `DualShotStyle`: customize the composed layout — selfie corner

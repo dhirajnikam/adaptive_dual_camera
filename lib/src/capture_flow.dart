@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -7,11 +8,12 @@ import 'package:geolocator/geolocator.dart';
 import 'labels.dart';
 import 'models.dart';
 
-/// Guided two-shot capture in one continuous flow: the front camera opens
-/// immediately with a short on-screen hint ("show your face"), one tap takes
-/// the selfie, the back camera opens automatically, a second tap finishes.
-/// Location + timestamp are attached and [onComplete] is called — two taps
-/// total, no interstitial screens.
+/// Hands-free two-shot capture in one continuous flow: the front camera opens
+/// immediately with a short on-screen hint ("show your face") and a visible
+/// countdown, the selfie is taken automatically, the back camera opens and
+/// counts down again, and the second shot finishes the flow. Location +
+/// timestamp are attached and [onComplete] is called — zero taps, no
+/// interstitial screens.
 ///
 /// Only one [CameraController] is ever alive, at [resolution] (default
 /// medium) with audio disabled — deliberately gentle on old and low-RAM
@@ -28,11 +30,20 @@ class GuidedDualCaptureFlow extends StatefulWidget {
     this.onError,
     this.resolution = ResolutionPreset.medium,
     this.labels = const DualCaptureLabels(),
+    this.countdown = const Duration(seconds: 3),
   });
 
   final ValueChanged<DualShotResult> onComplete;
   final ValueChanged<Object>? onError;
   final ResolutionPreset resolution;
+
+  /// How long the user gets to pose (and to turn the phone around before the
+  /// back shot) after each camera opens. [Duration.zero] shoots as soon as
+  /// the preview is live.
+  ///
+  /// ponytail: one delay for both shots — split into front/back durations if
+  /// turning the phone around needs longer than posing does.
+  final Duration countdown;
 
   /// Override to translate or reword every user-visible string.
   final DualCaptureLabels labels;
@@ -51,6 +62,10 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   XFile? _frontShot;
   bool _busy = false;
   late final Future<Position?> _positionFuture;
+  Timer? _countdownTimer;
+
+  /// Seconds still to go before the automatic shot; 0 means none pending.
+  int _secondsLeft = 0;
 
   @override
   void initState() {
@@ -68,6 +83,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
@@ -78,10 +94,42 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     // Old devices reclaim the camera aggressively; release it when backgrounded.
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      // Don't shoot at a pocket: the countdown restarts with the camera.
+      _cancelCountdown();
       _disposeController();
     } else if (state == AppLifecycleState.resumed && _controller == null) {
       _openCamera();
     }
+  }
+
+  void _cancelCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _secondsLeft = 0;
+  }
+
+  /// Counts down out loud on screen, then takes the shot itself. Restarted
+  /// from scratch every time a camera opens, so backgrounding mid-count
+  /// gives the user the full delay again rather than an instant capture.
+  void _startCountdown() {
+    _cancelCountdown();
+    final seconds = widget.countdown.inSeconds;
+    if (seconds <= 0) {
+      _shoot();
+      return;
+    }
+    setState(() => _secondsLeft = seconds);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _secondsLeft--);
+      if (_secondsLeft <= 0) {
+        _cancelCountdown();
+        _shoot();
+      }
+    });
   }
 
   /// Detach the preview from the tree in the same frame the controller is
@@ -127,7 +175,9 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
       );
       _controller = controller;
       await controller.initialize();
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
+      _startCountdown(); // hands-free: the preview is live, so start counting
     } on CameraException catch (e) {
       _controller = null;
       if (e.code.toLowerCase().contains('denied')) {
@@ -143,6 +193,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   Future<void> _shoot() async {
     final controller = _controller;
     if (_busy || controller == null || !controller.value.isInitialized) return;
+    _cancelCountdown();
     setState(() => _busy = true);
     try {
       final shot = await controller.takePicture();
@@ -357,7 +408,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
             ),
           ),
         ),
-        // Bottom scrim: front-shot thumbnail + ring shutter.
+        // Bottom scrim: front-shot thumbnail + countdown.
         Positioned(
           bottom: 0,
           left: 0,
@@ -391,12 +442,13 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
                           ),
                         ),
                       ),
-                    _ShutterButton(
-                      enabled:
-                          !_busy &&
-                          controller != null &&
-                          controller.value.isInitialized,
-                      onPressed: _shoot,
+                    _CountdownRing(
+                      secondsLeft: _secondsLeft,
+                      label: _busy || _secondsLeft == 0
+                          ? labels.capturing
+                          : (front
+                                ? labels.frontCountdown
+                                : labels.backCountdown),
                     ),
                   ],
                 ),
@@ -409,31 +461,53 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   }
 }
 
-class _ShutterButton extends StatelessWidget {
-  const _ShutterButton({required this.enabled, required this.onPressed});
+/// The old shutter's spot, now showing what the camera is about to do on its
+/// own: a big number ticking down, or a spinner while the shot is taken.
+class _CountdownRing extends StatelessWidget {
+  const _CountdownRing({required this.secondsLeft, required this.label});
 
-  final bool enabled;
-  final VoidCallback onPressed;
+  final int secondsLeft;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: enabled ? onPressed : null,
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 4),
-        ),
-        padding: const EdgeInsets.all(5),
-        child: DecoratedBox(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 72,
+          height: 72,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: enabled ? Colors.white : Colors.white38,
+            color: Colors.black26,
+            border: Border.all(color: Colors.white, width: 4),
           ),
+          child: secondsLeft > 0
+              ? Text(
+                  '$secondsLeft',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 3,
+                  ),
+                ),
         ),
-      ),
+        const SizedBox(height: 10),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+      ],
     );
   }
 }

@@ -26,6 +26,9 @@ const _localizedLabels = <String, DualCaptureLabels>{
   'हिन्दी': DualCaptureLabels(
     frontPrompt: 'अपना चेहरा दिखाएँ',
     backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
+    frontCountdown: 'सेल्फ़ी ली जा रही है…',
+    backCountdown: 'फ़ोन घुमाएँ — अब पीछे का फ़ोटो',
+    capturing: 'फ़ोटो लिया जा रहा है…',
     gettingLocation: 'स्थान प्राप्त हो रहा है…',
     cameraDenied:
         'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
@@ -136,9 +139,9 @@ class _HowItWorksCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const steps = [
-      (Icons.face, 'Selfie first — camera opens right away'),
-      (Icons.photo_camera, 'Back photo — switches automatically'),
-      (Icons.place, 'Location + time stamped for you'),
+      (Icons.face, 'Selfie first — shot automatically after a countdown'),
+      (Icons.screen_rotation_alt, 'Turn the phone around — back photo next'),
+      (Icons.place, 'Location + time stamped for you — no taps at all'),
     ];
     return Card(
       child: Padding(
