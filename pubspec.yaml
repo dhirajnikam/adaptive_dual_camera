@@ -1,6 +1,6 @@
 name: adaptive_dual_camera
-description: "Hands-free front + back photo capture with location and timestamp — simultaneous where the hardware allows it, sequential where it doesn't, same layout either way. Pure Dart, no custom native code."
-version: 0.4.0
+description: "Hands-free front + back photo capture with location and timestamp — native simultaneous capture where the hardware allows it, sequential everywhere else, and the same composed layout either way."
+version: 0.5.0
 homepage: https://github.com/dhirajnikam/adaptive_dual_camera
 repository: https://github.com/dhirajnikam/adaptive_dual_camera
 issue_tracker: https://github.com/dhirajnikam/adaptive_dual_camera/issues
@@ -13,7 +13,8 @@ topics:
 
 environment:
   sdk: ^3.12.2
-  flutter: '>=3.27.0'
+  # 3.44 is the floor for Built-in Kotlin, which the Android probe relies on.
+  flutter: '>=3.44.0'
 
 dependencies:
   camera: ^0.12.0+2
@@ -27,3 +28,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      # The only native code in the package: a capability probe that answers
+      # "can this device run both cameras at once?". Capture stays pure Dart.
+      android:
+        package: com.dhirajnikam.adaptive_dual_camera
+        pluginClass: AdaptiveDualCameraPlugin
+      ios:
+        pluginClass: AdaptiveDualCameraPlugin

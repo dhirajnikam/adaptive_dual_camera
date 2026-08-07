@@ -1,0 +1,60 @@
+group = "com.dhirajnikam.adaptive_dual_camera"
+version = "1.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.9.1"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+// No `kotlin-android` here: Flutter 3.44+ supplies Kotlin itself (Built-in
+// Kotlin), and applying KGP ourselves breaks the app build.
+apply plugin: "com.android.library"
+
+android {
+    namespace = "com.dhirajnikam.adaptive_dual_camera"
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        // Matches the `camera` plugin's floor; the concurrent-camera query
+        // itself is guarded at runtime for API < 30.
+        minSdk = 21
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+}
+
+// CameraX negotiates the concurrent front+back session. It is used only for
+// the simultaneous path; the sequential path is the pure-Dart `camera`
+// plugin and never touches this code.
+ext.camerax_version = "1.4.1"
+
+dependencies {
+    implementation "androidx.camera:camera-core:$camerax_version"
+    implementation "androidx.camera:camera-camera2:$camerax_version"
+    implementation "androidx.camera:camera-lifecycle:$camerax_version"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}

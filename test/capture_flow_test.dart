@@ -20,14 +20,13 @@ final Uint8List _kPng = Uint8List.fromList(<int>[
 /// A camera that always initializes and hands back a real (tiny) file, so the
 /// flow can be driven with no device. Records which lens each shot came from.
 ///
-/// [concurrent] models the hardware split this package cares about: true for
-/// a device that can hold front and back open at once, false for one that
-/// refuses the second camera.
+/// This fake only ever serves the *sequential* path — simultaneous capture
+/// goes through the native channel — so it refuses a second concurrent open,
+/// which is exactly the invariant that path has to respect.
 class _FakeCameraPlatform extends CameraPlatform {
-  _FakeCameraPlatform(this.dir, {this.concurrent = false});
+  _FakeCameraPlatform(this.dir);
 
   final Directory dir;
-  final bool concurrent;
   final List<CameraLensDirection> shotLenses = <CameraLensDirection>[];
   final Map<int, CameraLensDirection> _lensOf = <int, CameraLensDirection>{};
   final Set<int> _open = <int>{};
@@ -71,7 +70,7 @@ class _FakeCameraPlatform extends CameraPlatform {
     int cameraId, {
     ImageFormatGroup imageFormatGroup = ImageFormatGroup.unknown,
   }) async {
-    if (!concurrent && _open.isNotEmpty) {
+    if (_open.isNotEmpty) {
       throw CameraException(
         'CameraAccessError',
         'Another camera is already in use.',
@@ -123,11 +122,56 @@ void main() {
   late Directory dir;
   late _FakeCameraPlatform camera;
 
-  /// Swap in hardware that can (or can't) run both cameras at once. Call
-  /// before pumping the flow.
-  void useCamera({required bool concurrent}) {
-    camera = _FakeCameraPlatform(dir, concurrent: concurrent);
+  /// Method calls the flow made to the native (simultaneous) plugin.
+  late List<String> nativeCalls;
+
+  /// Swap in hardware that can (or can't) run both cameras at once.
+  ///
+  /// Two independent knobs, because the interesting device is the liar:
+  /// [claimsSupport] is what the native probe reports, [concurrent] is
+  /// whether the native session can actually be started. The [camera] plugin
+  /// fake only ever serves the sequential path now — simultaneous capture is
+  /// entirely native.
+  void useCamera({required bool concurrent, bool? claimsSupport}) {
+    camera = _FakeCameraPlatform(dir);
     CameraPlatform.instance = camera;
+    DualCameraSupport.resetCache();
+    nativeCalls = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('adaptive_dual_camera/support'),
+          (call) async {
+            nativeCalls.add(call.method);
+            switch (call.method) {
+              case 'supportsConcurrentCameras':
+                return claimsSupport ?? concurrent;
+              case 'startConcurrent':
+                if (!concurrent) {
+                  throw PlatformException(
+                    code: 'startFailed',
+                    message: 'No concurrent camera combination',
+                  );
+                }
+                return <String, dynamic>{
+                  'backTextureId': 1,
+                  'frontTextureId': 2,
+                  'backRotation': 90,
+                  'frontRotation': 270,
+                };
+              case 'captureBoth':
+                final back = File('${dir.path}/native_back.jpg')
+                  ..writeAsBytesSync(_kPng);
+                final front = File('${dir.path}/native_front.jpg')
+                  ..writeAsBytesSync(_kPng);
+                return <String, dynamic>{
+                  'backPath': back.path,
+                  'frontPath': front.path,
+                };
+              default:
+                return null;
+            }
+          },
+        );
   }
 
   setUp(() {
@@ -203,7 +247,7 @@ void main() {
     expect(result!.hasLocation, isFalse);
   });
 
-  testWidgets('concurrent hardware: one countdown, both shutters together', (
+  testWidgets('concurrent hardware: native session, one countdown', (
     tester,
   ) async {
     useCamera(concurrent: true);
@@ -218,26 +262,29 @@ void main() {
     );
     await flush(tester);
 
-    // Both cameras came up, so there is one shared countdown, not two.
-    expect(camera.peakOpen, 2);
+    // The native session owns both cameras, so there is one shared countdown
+    // and the `camera` plugin is never opened at all.
+    expect(nativeCalls, contains('startConcurrent'));
+    expect(camera.peakOpen, 0);
     expect(find.text('Both photos at once — hold still…'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
+    // Both previews are native textures, not CameraPreviews.
+    expect(find.byType(Texture), findsNWidgets(2));
 
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
     await flush(tester);
 
-    expect(camera.shotLenses, hasLength(2));
-    expect(camera.shotLenses.toSet(), {
-      CameraLensDirection.front,
-      CameraLensDirection.back,
-    });
+    expect(nativeCalls, contains('captureBoth'));
+    expect(camera.shotLenses, isEmpty); // no plugin shutter was used
     expect(result, isNotNull);
     expect(result!.wasSimultaneous, isTrue);
+    expect(result!.frontPhoto.path, endsWith('native_front.jpg'));
+    expect(result!.backPhoto.path, endsWith('native_back.jpg'));
   });
 
-  testWidgets('mode: sequential skips the probe on concurrent hardware', (
+  testWidgets('mode: sequential never touches the native session', (
     tester,
   ) async {
     useCamera(concurrent: true);
@@ -252,10 +299,66 @@ void main() {
     );
     await flush(tester);
 
+    expect(nativeCalls, isEmpty);
     expect(camera.peakOpen, 1);
     expect(find.text('Taking your selfie…'), findsOneWidget);
+    // Explicitly sequential: no notice, because nothing was denied.
+    expect(find.textContaining("can't use both cameras"), findsNothing);
     await tester.pump(const Duration(seconds: 3));
     await flush(tester);
+  });
+
+  testWidgets('auto on a device that cannot do it says so', (tester) async {
+    useCamera(concurrent: false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GuidedDualCaptureFlow(
+          countdown: const Duration(seconds: 3),
+          onComplete: (_) {},
+        ),
+      ),
+    );
+    await flush(tester);
+
+    expect(find.textContaining("can't use both cameras"), findsOneWidget);
+    // The platform said no, so the native session was never even started.
+    expect(nativeCalls, ['supportsConcurrentCameras']);
+    expect(camera.peakOpen, 1);
+    await tester.pump(const Duration(seconds: 3));
+    await flush(tester);
+  });
+
+  testWidgets('a device that claims support but fails falls back', (
+    tester,
+  ) async {
+    // The liar: the probe says yes, starting the session then fails.
+    useCamera(concurrent: false, claimsSupport: true);
+    DualShotResult? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GuidedDualCaptureFlow(
+          countdown: const Duration(seconds: 3),
+          onComplete: (r) => result = r,
+        ),
+      ),
+    );
+    await flush(tester);
+
+    expect(nativeCalls, contains('startConcurrent'));
+    expect(find.textContaining("can't use both cameras"), findsOneWidget);
+    expect(find.text('Taking your selfie…'), findsOneWidget);
+
+    // And it still delivers both photos the long way round.
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 1));
+      await flush(tester);
+    }
+    expect(result, isNotNull);
+    expect(result!.wasSimultaneous, isFalse);
+    expect(camera.shotLenses, [
+      CameraLensDirection.front,
+      CameraLensDirection.back,
+    ]);
   });
 
   testWidgets('countdown labels are overridable', (tester) async {

@@ -13,6 +13,9 @@ class DualCaptureLabels {
     this.bothCountdown = 'Both photos at once — hold still…',
     this.capturing = 'Capturing…',
     this.openingCameras = 'Opening cameras…',
+    this.simultaneousUnavailable =
+        'This phone can\'t use both cameras at once — '
+        'taking the photos one after the other',
     this.gettingLocation = 'Getting location…',
     this.cameraDenied =
         'Camera access is needed to take pictures.\nPlease allow camera access and try again.',
@@ -49,6 +52,10 @@ class DualCaptureLabels {
 
   /// While the flow is deciding whether this device can run both cameras.
   final String openingCameras;
+
+  /// Shown once, over the first viewfinder, when the app asked for
+  /// [DualCaptureMode.auto] but the device can only shoot sequentially.
+  final String simultaneousUnavailable;
 
   final String gettingLocation;
   final String cameraDenied;

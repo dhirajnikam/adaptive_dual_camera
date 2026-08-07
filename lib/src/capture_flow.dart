@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 
 import 'labels.dart';
 import 'models.dart';
+import 'support.dart';
 
 /// Hands-free two-shot capture, using both cameras at once where the hardware
 /// allows it and one after the other where it doesn't.
@@ -22,11 +23,20 @@ import 'models.dart';
 /// [DualShotResult], and [DualShotView] renders it identically —
 /// [DualShotResult.wasSimultaneous] is the only tell.
 ///
-/// Support is probed by actually opening the second camera rather than by
-/// asking the platform, because that is the thing that has to work; a device
-/// that advertises concurrency but fails to deliver it falls back cleanly.
-/// Pass [DualCaptureMode.sequential] to skip the probe entirely, which is the
-/// right call on old and low-RAM phones.
+/// Support is decided in two steps: [DualCameraSupport] asks the platform
+/// (`getConcurrentCameraIds` / `AVCaptureMultiCamSession`), and if the answer
+/// is yes the flow still confirms by opening both cameras — hardware that
+/// advertises concurrency but drops a pipeline falls back cleanly. Devices
+/// that say no are never asked to open a second camera at all.
+///
+/// When the device can't do it, the sequential viewfinder says so once
+/// ([DualCaptureLabels.simultaneousUnavailable]) rather than silently
+/// behaving differently from the same app on someone else's phone. Query it
+/// yourself up front with
+/// [DualCameraSupport.supportsSimultaneousCapture].
+///
+/// Pass [DualCaptureMode.sequential] to skip all of this, which is the right
+/// call on old and low-RAM phones.
 ///
 /// Permissions: the camera plugin requests camera access on first use; a
 /// denial shows a retry screen ([DualCaptureLabels.cameraDenied]). Location
@@ -88,10 +98,13 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     with WidgetsBindingObserver {
   List<CameraDescription> _cameras = const [];
 
-  /// The live camera in sequential mode; the *back* camera in simultaneous
-  /// mode, where [_frontController] runs alongside it.
+  /// The live camera in sequential mode. Null in simultaneous mode, which is
+  /// driven by the native session rather than the `camera` plugin.
   CameraController? _controller;
-  CameraController? _frontController;
+
+  /// The two texture ids the native session streams into; null in sequential
+  /// mode.
+  NativeDualPreview? _nativePreview;
 
   _Stage _stage = _Stage.probing;
   XFile? _frontShot;
@@ -101,6 +114,10 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
 
   /// Seconds still to go before the automatic shot; 0 means none pending.
   int _secondsLeft = 0;
+
+  /// Set when the caller asked for [DualCaptureMode.auto] but this device
+  /// can't deliver it — drives the one-time notice on the viewfinder.
+  bool _simultaneousUnavailable = false;
 
   bool get _simultaneous => _stage == _Stage.bothShoot;
 
@@ -123,7 +140,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     _countdownTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
-    _frontController?.dispose();
+    if (_nativePreview != null) DualCameraSupport.stopSimultaneous();
     super.dispose();
   }
 
@@ -134,20 +151,33 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
         state == AppLifecycleState.paused) {
       // Don't shoot at a pocket: the countdown restarts with the camera.
       _cancelCountdown();
-      _disposeControllers();
-    } else if (state == AppLifecycleState.resumed && _controller == null) {
+      _releaseCameras();
+    } else if (state == AppLifecycleState.resumed &&
+        _controller == null &&
+        _nativePreview == null) {
       _simultaneous ? _openBoth() : _openCamera();
     }
   }
 
-  /// Pick the capture mode once, at the start: try both cameras together and
-  /// keep them if they come up, otherwise run the one-at-a-time flow.
+  /// Pick the capture mode once, at the start: ask the platform, and if it
+  /// says yes confirm by actually opening both cameras. Anything short of
+  /// that runs the one-at-a-time flow.
   Future<void> _start() async {
-    final canTryBoth =
-        widget.mode == DualCaptureMode.auto &&
+    final hasBothLenses =
         _cameras.any((c) => c.lensDirection == CameraLensDirection.front) &&
         _cameras.any((c) => c.lensDirection == CameraLensDirection.back);
-    if (canTryBoth && await _openBoth()) return;
+    if (widget.mode == DualCaptureMode.auto && hasBothLenses) {
+      final platformSaysYes =
+          await DualCameraSupport.supportsSimultaneousCapture();
+      if (!mounted) return;
+      if (platformSaysYes) {
+        if (await _openBoth()) return;
+        if (!mounted) return;
+      }
+      // Either the device never claimed concurrency, or it claimed it and
+      // then failed the attempt. Both are worth telling the user about.
+      _simultaneousUnavailable = true;
+    }
     if (!mounted) return;
     setState(() => _stage = _Stage.frontShoot);
     await _openCamera();
@@ -183,19 +213,20 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     });
   }
 
-  /// Detach previews from the tree in the same frame the controllers are
-  /// disposed — CameraPreview listens to its controller and rebuilds on value
-  /// changes, so disposing while it is still mounted throws
-  /// "buildPreview() was called on a disposed CameraController".
-  Future<void> _disposeControllers() async {
-    final back = _controller;
-    final front = _frontController;
-    if (back == null && front == null) return;
+  /// Detach previews from the tree in the same frame the camera is released —
+  /// CameraPreview listens to its controller and rebuilds on value changes,
+  /// so disposing while it is still mounted throws "buildPreview() was called
+  /// on a disposed CameraController". Textures need the same treatment: a
+  /// Texture widget pointing at an unregistered id renders garbage.
+  Future<void> _releaseCameras() async {
+    final controller = _controller;
+    final hadNative = _nativePreview != null;
+    if (controller == null && !hadNative) return;
     _controller = null;
-    _frontController = null;
+    _nativePreview = null;
     if (mounted) setState(() {});
-    await back?.dispose();
-    await front?.dispose();
+    await controller?.dispose();
+    if (hadNative) await DualCameraSupport.stopSimultaneous();
   }
 
   void _fail(Object e) {
@@ -216,48 +247,23 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     imageFormatGroup: ImageFormatGroup.jpeg,
   );
 
-  /// Try to hold both cameras open at once. Returns false — having cleaned up
-  /// after itself — on any device that won't do it.
+  /// Hand the simultaneous path to the native session. Returns false — with
+  /// both cameras released — on any device that won't actually do it.
   Future<bool> _openBoth() async {
-    await _disposeControllers();
-    CameraController? back;
-    CameraController? front;
-    try {
-      back = _newController(CameraLensDirection.back);
-      await back.initialize().timeout(_openTimeout);
-      front = _newController(CameraLensDirection.front);
-      await front.initialize().timeout(_openTimeout);
-      // Opening the second camera can knock the first one over instead of
-      // throwing, so confirm both are still healthy before committing.
-      if (!back.value.isInitialized ||
-          !front.value.isInitialized ||
-          back.value.hasError ||
-          front.value.hasError) {
-        throw CameraException(
-          'concurrentUnavailable',
-          'The device dropped one camera when the other opened.',
-        );
-      }
-      if (!mounted) throw CameraException('disposed', 'Flow left the tree.');
-      _controller = back;
-      _frontController = front;
-      setState(() => _stage = _Stage.bothShoot);
-      _startCountdown();
-      return true;
-    } on CameraException catch (e) {
-      await back?.dispose();
-      await front?.dispose();
-      if (e.code.toLowerCase().contains('denied')) {
-        if (mounted) setState(() => _stage = _Stage.cameraDenied);
-        _fail(e);
-        return true; // handled: the retry screen owns the flow now
-      }
-      return false; // not concurrent-capable — the caller goes sequential
-    } catch (_) {
-      await back?.dispose();
-      await front?.dispose();
+    await _releaseCameras();
+    final preview = await DualCameraSupport.startSimultaneous().timeout(
+      _openTimeout,
+      onTimeout: () => null, // a device that hangs is a device that can't
+    );
+    if (preview == null) return false;
+    if (!mounted) {
+      await DualCameraSupport.stopSimultaneous();
       return false;
     }
+    _nativePreview = preview;
+    setState(() => _stage = _Stage.bothShoot);
+    _startCountdown();
+    return true;
   }
 
   Future<void> _openCamera() async {
@@ -267,7 +273,7 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
       return;
     }
     try {
-      await _disposeControllers();
+      await _releaseCameras();
       final controller = _newController(
         _stage == _Stage.frontShoot
             ? CameraLensDirection.front
@@ -291,24 +297,37 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   }
 
   Future<void> _shoot() async {
+    if (_busy) return;
+    if (_simultaneous) {
+      _cancelCountdown();
+      setState(() => _busy = true);
+      // Both shutters at once, fired by the native session — this is the
+      // whole point of the mode.
+      final shots = await DualCameraSupport.captureBoth();
+      await _releaseCameras();
+      if (!mounted) return;
+      if (shots == null) {
+        // The session died mid-capture. Rather than strand the user, start
+        // the sequential flow over — they still end up with both photos.
+        _simultaneousUnavailable = true;
+        setState(() {
+          _stage = _Stage.frontShoot;
+          _busy = false;
+        });
+        await _openCamera();
+        return;
+      }
+      await _finish(front: shots.front, back: shots.back, simultaneous: true);
+      return;
+    }
+
     final controller = _controller;
-    if (_busy || controller == null || !controller.value.isInitialized) return;
+    if (controller == null || !controller.value.isInitialized) return;
     _cancelCountdown();
     setState(() => _busy = true);
     try {
-      if (_simultaneous) {
-        // Both shutters at once — this is the whole point of the mode.
-        final shots = await Future.wait([
-          controller.takePicture(),
-          _frontController!.takePicture(),
-        ]);
-        await _disposeControllers();
-        if (!mounted) return;
-        await _finish(front: shots[1], back: shots[0], simultaneous: true);
-        return;
-      }
       final shot = await controller.takePicture();
-      await _disposeControllers();
+      await _releaseCameras();
       if (!mounted) return;
       if (_stage == _Stage.frontShoot) {
         _frontShot = shot;
@@ -451,7 +470,8 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     );
   }
 
-  /// Full-bleed preview: cover the screen instead of letterboxing.
+  /// Full-bleed preview from the `camera` plugin (sequential path): cover the
+  /// screen instead of letterboxing.
   Widget _preview(CameraController controller) {
     return FittedBox(
       fit: BoxFit.cover,
@@ -464,21 +484,45 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     );
   }
 
+  /// Preview from the native concurrent session (simultaneous path). The
+  /// texture carries raw sensor frames on Android, so the rotation the
+  /// platform reported has to be applied here; iOS reports 0 because the
+  /// capture connection already delivers portrait.
+  Widget _texturePreview(int textureId, int rotation) {
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: RotatedBox(
+        quarterTurns: (rotation ~/ 90) % 4,
+        // Sized so FittedBox has an intrinsic box to scale; the aspect is
+        // corrected by the cover fit.
+        child: SizedBox(
+          width: 1080,
+          height: 1440,
+          child: Texture(textureId: textureId),
+        ),
+      ),
+    );
+  }
+
   Widget _viewfinder() {
     final labels = widget.labels;
     final controller = _controller;
+    final native = _nativePreview;
     final front = _stage == _Stage.frontShoot;
     final live = controller != null && controller.value.isInitialized;
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (live)
+        if (native != null)
+          _texturePreview(native.backTextureId, native.backRotation)
+        else if (live)
           _preview(controller)
         else
           const Center(child: CircularProgressIndicator(color: Colors.white)),
         // Simultaneous mode: the selfie runs as an inset, previewing the
         // arrangement the saved image will have.
-        if (_simultaneous && _frontController?.value.isInitialized == true)
+        if (native != null)
           Positioned(
             top: 90,
             right: 16,
@@ -486,7 +530,10 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
             height: 128,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: _preview(_frontController!),
+              child: _texturePreview(
+                native.frontTextureId,
+                native.frontRotation,
+              ),
             ),
           ),
         // Top scrim: step chip + one-line hint.
@@ -554,6 +601,49 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
             ),
           ),
         ),
+        // Auto was asked for and this device can't do it — say so instead of
+        // quietly behaving differently from the same app on another phone.
+        if (_simultaneousUnavailable && front)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 64, left: 16, right: 16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        color: Colors.white70,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          labels.simultaneousUnavailable,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         // Bottom scrim: front-shot thumbnail + countdown.
         Positioned(
           bottom: 0,

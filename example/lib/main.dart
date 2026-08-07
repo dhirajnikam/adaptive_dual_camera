@@ -32,6 +32,9 @@ const _localizedLabels = <String, DualCaptureLabels>{
     bothCountdown: 'दोनों फ़ोटो एक साथ — स्थिर रहें…',
     capturing: 'फ़ोटो लिया जा रहा है…',
     openingCameras: 'कैमरे खुल रहे हैं…',
+    simultaneousUnavailable:
+        'यह फ़ोन दोनों कैमरे एक साथ नहीं चला सकता — '
+        'फ़ोटो बारी-बारी से लिए जाएँगे',
     gettingLocation: 'स्थान प्राप्त हो रहा है…',
     cameraDenied:
         'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
@@ -55,6 +58,17 @@ class _HomePageState extends State<HomePage> {
 
   // Auto uses both cameras at once where the hardware allows it.
   DualCaptureMode _mode = DualCaptureMode.auto;
+
+  /// Null until the native probe answers.
+  bool? _supportsSimultaneous;
+
+  @override
+  void initState() {
+    super.initState();
+    DualCameraSupport.supportsSimultaneousCapture().then((supported) {
+      if (mounted) setState(() => _supportsSimultaneous = supported);
+    });
+  }
 
   DualCaptureLabels get _labels => _localizedLabels[_language]!;
 
@@ -145,11 +159,26 @@ class _HomePageState extends State<HomePage> {
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Auto fires both cameras together when the device supports it, '
-            'and falls back on its own when it does not.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          // What the native probe says about *this* device.
+          switch (_supportsSimultaneous) {
+            null => Text(
+              'Checking whether this device can use both cameras at once…',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            true => Text(
+              'This device supports both cameras at once. Auto will use it.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.green.shade700),
+            ),
+            false => Text(
+              'This device cannot run both cameras at once, so Auto will '
+              'take the photos one after the other.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.orange.shade800),
+            ),
+          },
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _startCapture,

@@ -1,3 +1,30 @@
+## 0.5.0
+
+* **The simultaneous path is now native.** 0.4.0 tried to run two
+  `CameraController`s at once, which the `camera` plugin does not really
+  support. Simultaneous capture is now its own native session — a CameraX
+  concurrent session on Android, `AVCaptureMultiCamSession` on iOS — with
+  each camera published as a Flutter texture and both shutters fired
+  together. **The sequential path is unchanged**: still pure Dart on the
+  official `camera` plugin, which is the only thing that touches it.
+* There is deliberately no native compositor. Each camera writes its own
+  JPEG and Dart composes the layout, so both paths still produce a
+  pixel-identical result.
+* Support is decided by the platform first — Android
+  `CameraManager.getConcurrentCameraIds()` (API 30+, `FEATURE_CAMERA_
+  CONCURRENT` below) requiring a front+back combination, iOS
+  `AVCaptureMultiCamSession.isMultiCamSupported` — and only then by starting
+  the session. Query it yourself with
+  `DualCameraSupport.supportsSimultaneousCapture()`.
+* **Unsupported devices now say so.** The first viewfinder shows
+  `DualCaptureLabels.simultaneousUnavailable` when `auto` was asked for and
+  the device can't deliver it, instead of silently behaving differently. The
+  example app reports device support on its home screen too.
+* If the native session dies mid-capture, the flow restarts sequentially
+  rather than stranding the user.
+* **Requires Flutter 3.44+** — the Android plugin uses Built-in Kotlin.
+  Android `minSdk 21`; iOS deployment target 12.0.
+
 ## 0.4.0
 
 * **Simultaneous capture where the hardware allows it.** On devices that can

@@ -4,11 +4,17 @@ Hands-free front + back photo capture with location and timestamp —
 **simultaneously where the hardware allows it, one after the other where it
 doesn't**, and the same result layout either way.
 
-Pure Dart — this package ships **no native code** of its own. It composes the
-official [`camera`](https://pub.dev/packages/camera) and
-[`geolocator`](https://pub.dev/packages/geolocator) plugins, so it runs
-anywhere they do (Android 5.0+ / SDK 21, iOS 12+), including old and low-RAM
-phones: previews default to `ResolutionPreset.medium` and audio is never
+Two engines, one result:
+
+| Path | Runs on | Built from |
+|---|---|---|
+| **Simultaneous** | Devices with concurrent-camera hardware | This package's native code — CameraX concurrent session (Android), `AVCaptureMultiCamSession` (iOS) |
+| **Sequential** | Everything else | Pure Dart on the official [`camera`](https://pub.dev/packages/camera) plugin |
+
+Location comes from [`geolocator`](https://pub.dev/packages/geolocator) on
+both paths, and both hand back the same `DualShotResult` rendered by the same
+widget. The sequential path stays gentle on old and low-RAM phones: one
+camera open at a time, `ResolutionPreset.medium` by default, audio never
 opened.
 
 ## The flow
@@ -34,16 +40,31 @@ known, then to none) and a timestamp are attached, and you get one
 `DualShotResult`. `result.wasSimultaneous` tells you which path ran — useful
 if your app needs the two shots to prove "same moment".
 
-### How support is detected
+### How the path is chosen
 
-By **actually opening the second camera**, not by asking the platform. A
-device that advertises concurrency but drops one pipeline when the other
-opens is caught by the probe and falls back cleanly. The cost is one extra
-camera-open at startup on devices that can't do it.
+Two steps, because a hardware flag is a claim and not a guarantee:
 
-Pass `mode: DualCaptureMode.sequential` to skip the probe entirely — the
-right call on old and low-RAM phones, where a second camera pipeline
-competes for memory.
+1. **Ask the platform.** Android checks
+   `CameraManager.getConcurrentCameraIds()` (API 30+, falling back to the
+   `FEATURE_CAMERA_CONCURRENT` system feature) and requires a combination
+   that holds a front *and* a back camera — some devices report concurrency
+   for two back lenses, which is useless here. iOS checks
+   `AVCaptureMultiCamSession.isMultiCamSupported`.
+2. **Then actually start the session.** If it fails, the flow releases both
+   cameras and runs sequentially instead.
+
+When simultaneous isn't available, the first viewfinder says so
+(`DualCaptureLabels.simultaneousUnavailable`) rather than quietly behaving
+differently from the same app on someone else's phone. Query it yourself up
+front to adapt your own UI:
+
+```dart
+final canDoBoth = await DualCameraSupport.supportsSimultaneousCapture();
+```
+
+Pass `mode: DualCaptureMode.sequential` to skip all of this — the right call
+on old and low-RAM phones, where a second camera pipeline competes for
+memory. In that mode the native session is never touched at all.
 
 ```dart
 GuidedDualCaptureFlow(
@@ -179,11 +200,17 @@ Declare in your app:
 **Android** (`android/app/src/main/AndroidManifest.xml`):
 
 ```xml
+<uses-permission android:name="android.permission.CAMERA" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 <!-- for the map thumbnail -->
 <uses-permission android:name="android.permission.INTERNET" />
 ```
+
+The native session needs `CAMERA` granted before it starts; the `camera`
+plugin asks for it on the sequential path, so request it at runtime (e.g.
+with `permission_handler`) if the first capture on a device might be a
+simultaneous one.
 
 **iOS** (`ios/Runner/Info.plist`):
 
@@ -208,12 +235,33 @@ Declare in your app:
 - `DualShotView` decodes both photos at display size, not full camera
   resolution.
 
+## What the native code does (and doesn't)
+
+The plugin's Kotlin and Swift cover the simultaneous path only:
+
+- Report concurrent-camera support.
+- Run one concurrent session, publishing each camera as a Flutter texture.
+- Fire both shutters together and write two JPEGs.
+
+There is deliberately **no native compositor**. Each camera produces its own
+file, and Dart composes the final layout — which is what lets the
+simultaneous and sequential paths produce a pixel-identical result. The
+sequential path never enters native code at all.
+
+### Requirements
+
+- **Flutter 3.44+** (the Android plugin uses Built-in Kotlin).
+- **Android**: `minSdk 21`; concurrent capture itself needs API 30+ hardware
+  that reports a front+back combination. CameraX 1.4.1 is pulled in by the
+  plugin.
+- **iOS**: deployment target 12.0; simultaneous needs iOS 13+ on an A12 or
+  later device.
+
 ## Credits
 
-The simultaneous-capture support matrix (Android concurrent cameras via
-`CameraManager.getConcurrentCameraIds`, iOS `AVCaptureMultiCamSession` on
-A12+) follows the ground covered by
-[`dual_cameras`](https://github.com/RomanSlack/dual_cameras) by Roman Slack —
-a native, GPU-composited dual-camera *video* recorder. This package stays
-pure Dart and stills-only, so it probes the same capability empirically
-instead of through platform channels.
+The simultaneous-capture approach — the Android/iOS support matrix and the
+CameraX concurrent binding pattern — follows
+[`dual_cameras`](https://github.com/RomanSlack/dual_cameras) by Roman Slack,
+a native GPU-composited dual-camera *video* recorder. This package is
+stills-only and composes in Dart, so it needs neither the GL/Metal
+compositor nor the encoder pipeline that project is built around.
