@@ -37,10 +37,6 @@ Two taps total, no interstitial screens:
 The map is a single OpenStreetMap tile with a marker (`MapThumbnail`) — no
 maps SDK, no API key. Pass `showMap: false` for offline apps.
 
-To save the composed layout as one image, wrap the view in a
-`RepaintBoundary` and call `saveComposedDualShot(key, result)` — the PNG
-lands next to the captured photos in the app cache.
-
 ## Usage
 
 ```dart
@@ -57,7 +53,70 @@ Navigator.of(context).push(MaterialPageRoute(
 DualShotView(result: result)
 ```
 
-### Localization
+## Customizing the layout
+
+Pass a `DualShotStyle` to move the selfie, resize it, or recolor the info
+bar. Three ready-made looks:
+
+| Preset | Look |
+|---|---|
+| `DualShotStyle.classic` | Full-width translucent black bar flush with the bottom edge (the default). |
+| `DualShotStyle.floating` | Dark rounded card inset from the edges. |
+| `DualShotStyle.light` | Bright rounded card with dark text, for airy shots. |
+
+`copyWith` adjusts any single knob:
+
+```dart
+DualShotView(
+  result: result,
+  style: DualShotStyle.floating.copyWith(
+    selfieAlignment: Alignment.topLeft,
+    selfieWidth: 120,
+  ),
+)
+```
+
+Every field:
+
+| Field | Default | What it does |
+|---|---|---|
+| `selfieAlignment` | `Alignment.topRight` | Corner (or edge) the selfie card floats in. |
+| `selfieWidth` | `88` | Selfie card width; height is a fixed 3:4 portrait. |
+| `selfieRadius` | `10` | Corner radius of the selfie card. |
+| `selfieBorderColor` | `Colors.white` | Border color of the selfie card. |
+| `barColor` | `Colors.black54` | Background of the info bar. |
+| `textColor` | `Colors.white` | Primary text; the timestamp uses it at 70% opacity. |
+| `barRadius` | `0` | `0` = full-width bar on the bottom edge; `> 0` floats it inset with rounded corners. |
+
+## Saving as one image
+
+Wrap the view in a `RepaintBoundary` and call `saveComposedDualShot` — it
+snapshots exactly what is on screen, so the PNG matches the style you chose,
+and lands next to the captured photos in the app cache.
+
+```dart
+final viewKey = GlobalKey();
+
+RepaintBoundary(
+  key: viewKey,
+  child: DualShotView(result: result, style: DualShotStyle.floating),
+)
+
+// later, e.g. from a Save button:
+final file = await saveComposedDualShot(viewKey, result);
+// → …/DUAL_1754467500000.png
+```
+
+Pass `pixelRatio:` (default `2`) to trade file size against sharpness. When
+the result has a location, the call first precaches the map tile (capped at
+3 seconds) so a quick tap doesn't snapshot an empty map square; offline it
+captures the fallback icon instead.
+
+The file goes to the cache directory the `camera` plugin wrote the photos
+to. Cache can be evicted by the OS — copy it somewhere permanent (or hand it
+to a gallery/share plugin) if the user is meant to keep it.
+
+## Localization
 
 Every user-visible string lives in `DualCaptureLabels` — pass your own to
 translate or reword:
@@ -72,7 +131,7 @@ GuidedDualCaptureFlow(
 )
 ```
 
-### Permissions
+## Permissions
 
 Camera permission is requested automatically on first use; if denied, the
 flow shows a retry screen (`DualCaptureLabels.cameraDenied`). Location

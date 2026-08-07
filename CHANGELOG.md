@@ -1,3 +1,17 @@
+## 0.2.0
+
+* New `DualShotStyle`: customize the composed layout — selfie corner
+  (`selfieAlignment`), size, corner radius and border color, plus the info
+  bar's color, text color and shape. Ready-made looks: `classic` (full-width
+  translucent bar, the previous default), `floating` (dark rounded card) and
+  `light` (bright rounded card). `copyWith` for tweaks. The saved image
+  (`saveComposedDualShot`) follows whatever style is on screen.
+* Example app: pick a style preset and selfie corner on the result page
+  before saving.
+* Fix: `GuidedDualCaptureFlow` no longer calls `setState` after being
+  disposed when a capture fails, and no longer fires `onComplete` if the
+  user backs out while the location fix is finishing.
+
 ## 0.1.1
 
 * `DualShotView` redesigned GPS-camera style: the back photo fills the view,

@@ -163,16 +163,21 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
           const Duration(seconds: 2),
           onTimeout: _lastKnown,
         );
-        widget.onComplete(DualShotResult(
-          frontPhoto: _frontShot!,
-          backPhoto: shot,
-          timestamp: DateTime.now(),
-          latitude: position?.latitude,
-          longitude: position?.longitude,
-        ));
+        // User backed out while we waited for the fix — drop the result
+        // rather than calling onComplete against a dead context.
+        if (!mounted) return;
+        widget.onComplete(
+          DualShotResult(
+            frontPhoto: _frontShot!,
+            backPhoto: shot,
+            timestamp: DateTime.now(),
+            latitude: position?.latitude,
+            longitude: position?.longitude,
+          ),
+        );
       }
     } catch (e) {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
       _fail(e);
     }
   }
@@ -210,8 +215,9 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   }
 
   void _retryCamera() {
-    setState(() =>
-        _stage = _frontShot == null ? _Stage.frontShoot : _Stage.backShoot);
+    setState(
+      () => _stage = _frontShot == null ? _Stage.frontShoot : _Stage.backShoot,
+    );
     _openCamera();
   }
 
@@ -235,8 +241,10 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
           children: [
             const CircularProgressIndicator(color: Colors.white),
             const SizedBox(height: 16),
-            Text(widget.labels.gettingLocation,
-                style: const TextStyle(color: Colors.white)),
+            Text(
+              widget.labels.gettingLocation,
+              style: const TextStyle(color: Colors.white),
+            ),
           ],
         ),
       ),
@@ -311,7 +319,9 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white24,
                         borderRadius: BorderRadius.circular(999),
@@ -319,20 +329,26 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
                       child: Text(
                         front ? labels.stepOne : labels.stepTwo,
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Icon(front ? Icons.face : Icons.photo_camera,
-                        color: Colors.white, size: 20),
+                    Icon(
+                      front ? Icons.face : Icons.photo_camera,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         front ? labels.frontPrompt : labels.backPrompt,
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 15),
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
@@ -376,10 +392,12 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
                         ),
                       ),
                     _ShutterButton(
-                        enabled: !_busy &&
-                            controller != null &&
-                            controller.value.isInitialized,
-                        onPressed: _shoot),
+                      enabled:
+                          !_busy &&
+                          controller != null &&
+                          controller.value.isInitialized,
+                      onPressed: _shoot,
+                    ),
                   ],
                 ),
               ),

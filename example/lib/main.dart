@@ -27,7 +27,8 @@ const _localizedLabels = <String, DualCaptureLabels>{
     frontPrompt: 'अपना चेहरा दिखाएँ',
     backPrompt: 'जिसे कैप्चर करना है उस ओर कैमरा करें',
     gettingLocation: 'स्थान प्राप्त हो रहा है…',
-    cameraDenied: 'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
+    cameraDenied:
+        'फोटो लेने के लिए कैमरे की अनुमति चाहिए।\nकृपया अनुमति देकर फिर से कोशिश करें।',
     retry: 'फिर से कोशिश करें',
     locationUnavailable: 'स्थान उपलब्ध नहीं',
   ),
@@ -56,9 +57,9 @@ class _HomePageState extends State<HomePage> {
           resolution: _resolution,
           onComplete: (r) => Navigator.of(context).pop(r),
           onError: (e) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Capture error: $e')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Capture error: $e')));
           },
         ),
       ),
@@ -92,17 +93,19 @@ class _HomePageState extends State<HomePage> {
             onSelectionChanged: (s) => setState(() => _language = s.first),
           ),
           const SizedBox(height: 16),
-          Text('Camera resolution',
-              style: Theme.of(context).textTheme.titleSmall),
+          Text(
+            'Camera resolution',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
           const SizedBox(height: 8),
           SegmentedButton<ResolutionPreset>(
             segments: const [
+              ButtonSegment(value: ResolutionPreset.low, label: Text('Low')),
               ButtonSegment(
-                  value: ResolutionPreset.low, label: Text('Low')),
-              ButtonSegment(
-                  value: ResolutionPreset.medium, label: Text('Medium')),
-              ButtonSegment(
-                  value: ResolutionPreset.high, label: Text('High')),
+                value: ResolutionPreset.medium,
+                label: Text('Medium'),
+              ),
+              ButtonSegment(value: ResolutionPreset.high, label: Text('High')),
             ],
             selected: {_resolution},
             onSelectionChanged: (s) => setState(() => _resolution = s.first),
@@ -143,8 +146,10 @@ class _HowItWorksCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('How it works',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'How it works',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 12),
             for (final (icon, text) in steps)
               Padding(
@@ -178,20 +183,25 @@ class ResultPage extends StatefulWidget {
 class _ResultPageState extends State<ResultPage> {
   final _viewKey = GlobalKey();
   bool _saving = false;
+  Alignment _corner = Alignment.topRight;
+  DualShotStyle _preset = DualShotStyle.classic;
+
+  DualShotStyle get _style => _preset.copyWith(selfieAlignment: _corner);
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final file = await saveComposedDualShot(_viewKey, widget.result);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved: ${file.path}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Saved: ${file.path}')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -214,11 +224,65 @@ class _ResultPageState extends State<ResultPage> {
                   child: RepaintBoundary(
                     key: _viewKey,
                     child: DualShotView(
-                        result: widget.result, labels: widget.labels),
+                      result: widget.result,
+                      labels: widget.labels,
+                      style: _style,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              // Customize the layout; the saved image matches the preview.
+              Row(
+                children: [
+                  SegmentedButton<DualShotStyle>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: DualShotStyle.classic,
+                        label: Text('Classic'),
+                      ),
+                      ButtonSegment(
+                        value: DualShotStyle.floating,
+                        label: Text('Float'),
+                      ),
+                      ButtonSegment(
+                        value: DualShotStyle.light,
+                        label: Text('Light'),
+                      ),
+                    ],
+                    selected: {_preset},
+                    onSelectionChanged: (s) =>
+                        setState(() => _preset = s.first),
+                  ),
+                  const Spacer(),
+                  SegmentedButton<Alignment>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: Alignment.topLeft,
+                        icon: Icon(Icons.north_west, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: Alignment.topRight,
+                        icon: Icon(Icons.north_east, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: Alignment.bottomLeft,
+                        icon: Icon(Icons.south_west, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: Alignment.bottomRight,
+                        icon: Icon(Icons.south_east, size: 16),
+                      ),
+                    ],
+                    selected: {_corner},
+                    onSelectionChanged: (s) =>
+                        setState(() => _corner = s.first),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(

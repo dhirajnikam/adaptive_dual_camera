@@ -8,15 +8,91 @@ import 'labels.dart';
 import 'map_thumbnail.dart';
 import 'models.dart';
 
+/// Visual knobs for [DualShotView]: where the selfie sits, how big it is,
+/// and the colors of the info bar. Everything the composed (and saved)
+/// image looks like, in one const-able object.
+class DualShotStyle {
+  const DualShotStyle({
+    this.selfieAlignment = Alignment.topRight,
+    this.selfieWidth = 88,
+    this.selfieRadius = 10,
+    this.selfieBorderColor = Colors.white,
+    this.barColor = Colors.black54,
+    this.textColor = Colors.white,
+    this.barRadius = 0,
+  });
+
+  /// Corner (or edge) the selfie card floats in.
+  final Alignment selfieAlignment;
+
+  /// Selfie card width; height is a fixed 3:4 portrait.
+  final double selfieWidth;
+
+  /// Corner radius of the selfie card.
+  final double selfieRadius;
+
+  /// Border color of the selfie card.
+  final Color selfieBorderColor;
+
+  /// Background of the info bar (map + coordinates + timestamp).
+  final Color barColor;
+
+  /// Primary text color; secondary text derives from it at 70% opacity.
+  final Color textColor;
+
+  /// 0 = classic full-width bar flush with the bottom edge; > 0 floats the
+  /// bar inset from the edges with rounded corners.
+  final double barRadius;
+
+  /// Full-width translucent black bar — the GPS-camera default.
+  static const classic = DualShotStyle();
+
+  /// Dark rounded card floating above the bottom edge.
+  static const floating = DualShotStyle(
+    barRadius: 16,
+    barColor: Color(0xCC1C1C1E),
+  );
+
+  /// Light rounded card for bright, airy shots.
+  static const light = DualShotStyle(
+    barRadius: 16,
+    barColor: Color(0xE6FFFFFF),
+    textColor: Color(0xDE000000),
+  );
+
+  DualShotStyle copyWith({
+    Alignment? selfieAlignment,
+    double? selfieWidth,
+    double? selfieRadius,
+    Color? selfieBorderColor,
+    Color? barColor,
+    Color? textColor,
+    double? barRadius,
+  }) {
+    return DualShotStyle(
+      selfieAlignment: selfieAlignment ?? this.selfieAlignment,
+      selfieWidth: selfieWidth ?? this.selfieWidth,
+      selfieRadius: selfieRadius ?? this.selfieRadius,
+      selfieBorderColor: selfieBorderColor ?? this.selfieBorderColor,
+      barColor: barColor ?? this.barColor,
+      textColor: textColor ?? this.textColor,
+      barRadius: barRadius ?? this.barRadius,
+    );
+  }
+}
+
 /// Renders a [DualShotResult] GPS-camera style: the back photo fills the
-/// view, the selfie floats as a card in the top-right, and a translucent
-/// bar along the bottom holds the map, coordinates and timestamp.
+/// view, the selfie floats as a card, and a translucent bar holds the map,
+/// coordinates and timestamp. Pass a [DualShotStyle] to move the selfie,
+/// resize it, or recolor the bar — the saved image follows whatever is on
+/// screen.
 class DualShotView extends StatelessWidget {
   const DualShotView({
     super.key,
     required this.result,
     this.showMap = true,
     this.labels = const DualCaptureLabels(),
+    this.style = DualShotStyle.classic,
   });
 
   final DualShotResult result;
@@ -26,6 +102,10 @@ class DualShotView extends StatelessWidget {
 
   /// Override to translate or reword every user-visible string.
   final DualCaptureLabels labels;
+
+  /// Layout and colors; see [DualShotStyle.classic], [DualShotStyle.floating]
+  /// and [DualShotStyle.light] for ready-made looks.
+  final DualShotStyle style;
 
   @override
   Widget build(BuildContext context) {
@@ -43,25 +123,29 @@ class DualShotView extends StatelessWidget {
           cacheWidth: backWidth,
         ),
         // Selfie card.
-        Positioned(
-          top: 12,
-          right: 12,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black45, blurRadius: 8),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(
-                File(result.frontPhoto.path),
-                width: 88,
-                height: 117,
-                fit: BoxFit.cover,
-                cacheHeight: (117 * dpr).round(),
+        Padding(
+          // ponytail: fixed 100px bottom inset clears the info bar for
+          // bottom alignments; measure the bar if styles ever grow taller.
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+          child: Align(
+            alignment: style.selfieAlignment,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(style.selfieRadius),
+                border: Border.all(color: style.selfieBorderColor, width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black45, blurRadius: 8),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(style.selfieRadius - 2),
+                child: Image.file(
+                  File(result.frontPhoto.path),
+                  width: style.selfieWidth,
+                  height: style.selfieWidth * 4 / 3,
+                  fit: BoxFit.cover,
+                  cacheHeight: (style.selfieWidth * 4 / 3 * dpr).round(),
+                ),
               ),
             ),
           ),
@@ -72,7 +156,11 @@ class DualShotView extends StatelessWidget {
           right: 0,
           bottom: 0,
           child: Container(
-            color: Colors.black54,
+            margin: style.barRadius > 0 ? const EdgeInsets.all(12) : null,
+            decoration: BoxDecoration(
+              color: style.barColor,
+              borderRadius: BorderRadius.circular(style.barRadius),
+            ),
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
@@ -98,10 +186,10 @@ class DualShotView extends StatelessWidget {
                       Text(
                         result.hasLocation
                             ? '${result.latitude!.toStringAsFixed(6)}, '
-                                '${result.longitude!.toStringAsFixed(6)}'
+                                  '${result.longitude!.toStringAsFixed(6)}'
                             : labels.locationUnavailable,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: style.textColor,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -110,8 +198,10 @@ class DualShotView extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         formatTimestamp(result.timestamp),
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12),
+                        style: TextStyle(
+                          color: style.textColor.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -135,6 +225,12 @@ class DualShotView extends StatelessWidget {
 /// ...
 /// final file = await saveComposedDualShot(key, result);
 /// ```
+///
+/// It snapshots whatever is on screen, so the PNG matches the view's
+/// [DualShotStyle] exactly. [pixelRatio] trades file size for sharpness.
+///
+/// The cache directory can be evicted by the OS — copy the file somewhere
+/// permanent if the user is meant to keep it.
 Future<File> saveComposedDualShot(
   GlobalKey boundaryKey,
   DualShotResult result, {
@@ -153,8 +249,8 @@ Future<File> saveComposedDualShot(
     ).timeout(const Duration(seconds: 3), onTimeout: () {});
     await WidgetsBinding.instance.endOfFrame;
   }
-  final boundary = boundaryKey.currentContext!.findRenderObject()!
-      as RenderRepaintBoundary;
+  final boundary =
+      boundaryKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
   final image = await boundary.toImage(pixelRatio: pixelRatio);
   try {
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);

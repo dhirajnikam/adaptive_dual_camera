@@ -26,11 +26,13 @@ class MapThumbnail extends StatelessWidget {
   /// URL of the OSM tile shown for a location. Also used by
   /// `saveComposedDualShot` to precache the exact on-screen tile before
   /// snapshotting.
-  static String tileUrl(double latitude, double longitude,
-      [int zoom = defaultZoom]) {
+  static String tileUrl(
+    double latitude,
+    double longitude, [
+    int zoom = defaultZoom,
+  ]) {
     final scale = 1 << zoom;
-    final tileX =
-        ((longitude + 180) / 360 * scale).floor().clamp(0, scale - 1);
+    final tileX = ((longitude + 180) / 360 * scale).floor().clamp(0, scale - 1);
     final latRad = latitude * pi / 180;
     final tileY = ((1 - log(tan(latRad) + 1 / cos(latRad)) / pi) / 2 * scale)
         .floor()

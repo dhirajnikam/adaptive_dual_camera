@@ -1,6 +1,6 @@
 name: adaptive_dual_camera
 description: "Guided front-then-back photo capture with location and timestamp, composed from the official camera and geolocator plugins. Pure Dart, no custom native code, tuned for low-end devices."
-version: 0.1.1
+version: 0.2.0
 homepage: https://github.com/dhirajnikam/adaptive_dual_camera
 repository: https://github.com/dhirajnikam/adaptive_dual_camera
 issue_tracker: https://github.com/dhirajnikam/adaptive_dual_camera/issues
