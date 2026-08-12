@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -99,6 +100,7 @@ class DualShotView extends StatefulWidget {
     this.labels = const DualCaptureLabels(),
     this.style = DualShotStyle.dark,
     this.boundaryKey,
+    this.backAspect,
   });
 
   final DualShotResult result;
@@ -118,13 +120,19 @@ class DualShotView extends StatefulWidget {
   /// no empty margins from whatever box the view happens to be centered in.
   final GlobalKey? boundaryKey;
 
+  /// Back photo width/height, if the caller already knows it. The view learns
+  /// it from the decode otherwise, which means one reflow from the 3:4
+  /// placeholder — pass it to skip that. [composeDualShot] does, because a
+  /// snapshot can't wait for a reflow it can't see.
+  final double? backAspect;
+
   @override
   State<DualShotView> createState() => _DualShotViewState();
 }
 
 class _DualShotViewState extends State<DualShotView> {
   /// Back photo width/height as decoded (EXIF applied); 3:4 until known.
-  double _backAspect = 3 / 4;
+  late double _backAspect = widget.backAspect ?? 3 / 4;
 
   ImageProvider? _backProvider;
   ImageStream? _stream;
@@ -338,7 +346,11 @@ Future<File> saveComposedDualShot(
     // ponytail: also waits when the map is hidden — worst case one wasted
     // tile fetch capped at 3s; thread the flag through if that ever matters.
     await precacheImage(
-      NetworkImage(MapThumbnail.tileUrl(result.latitude!, result.longitude!)),
+      NetworkImage(
+        MapThumbnail.tileUrl(result.latitude!, result.longitude!),
+        // Same headers as the on-screen tile, or OSM throttles this one too.
+        headers: MapThumbnail.tileHeaders,
+      ),
       boundaryKey.currentContext!,
       onError: (_, _) {},
     ).timeout(const Duration(seconds: 3), onTimeout: () {});
@@ -358,6 +370,95 @@ Future<File> saveComposedDualShot(
   } finally {
     image.dispose();
   }
+}
+
+/// Composes a [DualShotResult] into one PNG without showing anything — the
+/// no-UI counterpart to [saveComposedDualShot], for apps that want the
+/// finished image straight out of `GuidedDualCaptureFlow.onComplete` instead
+/// of building a result page first:
+///
+/// ```dart
+/// GuidedDualCaptureFlow(
+///   onComplete: (result) async {
+///     final file = await composeDualShot(context, result,
+///         style: DualShotStyle.light);
+///   },
+/// )
+/// ```
+///
+/// It renders the same [DualShotView] the on-screen path renders — same
+/// [style], [showMap] and [labels] knobs — so the PNG is byte-for-byte what a
+/// result page would have saved. [width] is the card's logical width and
+/// defaults to the screen's, which is what an on-screen save uses.
+///
+/// [context] must still be mounted and under an [Overlay] (any [Navigator]
+/// route is). The card is inserted just off the left edge for one frame:
+/// laid out and painted, so there is a layer to snapshot, but never visible.
+Future<File> composeDualShot(
+  BuildContext context,
+  DualShotResult result, {
+  DualShotStyle style = DualShotStyle.dark,
+  bool showMap = true,
+  DualCaptureLabels labels = const DualCaptureLabels(),
+  double? width,
+  double pixelRatio = 2,
+}) async {
+  // Decode the back photo first: the card takes its shape from that aspect
+  // and normally learns it a frame or two after mounting. A snapshot can't
+  // wait for a reflow it can't observe, so it would compose against the 3:4
+  // placeholder and cover-crop a 16:9 shot.
+  final aspect = await _decodedAspect(File(result.backPhoto.path));
+  if (!context.mounted) {
+    throw StateError('composeDualShot: context unmounted before rendering');
+  }
+  final cardWidth = width ?? MediaQuery.sizeOf(context).width;
+  final boundaryKey = GlobalKey();
+  final entry = OverlayEntry(
+    builder: (context) => Positioned(
+      left: -cardWidth - 8,
+      top: 0,
+      width: cardWidth,
+      child: DualShotView(
+        result: result,
+        style: style,
+        showMap: showMap,
+        labels: labels,
+        boundaryKey: boundaryKey,
+        backAspect: aspect,
+      ),
+    ),
+  );
+  Overlay.of(context, rootOverlay: true).insert(entry);
+  try {
+    await WidgetsBinding.instance.endOfFrame; // built, laid out, painted
+    return await saveComposedDualShot(
+      boundaryKey,
+      result,
+      pixelRatio: pixelRatio,
+    );
+  } finally {
+    entry.remove();
+  }
+}
+
+/// An image file's width/height as the framework decodes it (EXIF applied, so
+/// it agrees with what [DualShotView] will lay out). Null if it won't decode —
+/// the view's own 3:4 placeholder then stands.
+Future<double?> _decodedAspect(File file) {
+  final completer = Completer<double?>();
+  final stream = FileImage(file).resolve(ImageConfiguration.empty);
+  late final ImageStreamListener listener;
+  void settle(double? aspect) {
+    stream.removeListener(listener);
+    if (!completer.isCompleted) completer.complete(aspect);
+  }
+
+  listener = ImageStreamListener((info, _) {
+    settle(info.image.width / info.image.height);
+    info.dispose();
+  }, onError: (_, _) => settle(null));
+  stream.addListener(listener);
+  return completer.future;
 }
 
 const _months = [

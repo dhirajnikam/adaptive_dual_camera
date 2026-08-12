@@ -1,3 +1,32 @@
+## 0.7.0
+
+* **New `composeDualShot(context, result)`: the composed image in one call,
+  with no result screen.** Saving the layout previously required mounting
+  `DualShotView` yourself, holding a `GlobalKey` and calling
+  `saveComposedDualShot` while it was on screen — so every app that just
+  wanted the finished file had to rebuild the example's result page first.
+  `composeDualShot` renders the same view off-screen for one frame and hands
+  back the PNG, taking the same `style`, `showMap`, `labels`, `width` and
+  `pixelRatio` knobs, so the file is identical to what a result page would
+  have saved. `saveComposedDualShot` is unchanged and still right when the
+  card is already on screen.
+* **Map tiles are much faster to appear.** Tile requests now send a real
+  `User-Agent`; the default `Dart/3.x (dart:io)` is exactly what
+  OpenStreetMap's tile policy throttles, which was the main reason a
+  thumbnail could sit blank for seconds. Set `MapThumbnail.userAgent` to
+  identify your own app (OSM's policy asks for it) — the same headers go out
+  with `saveComposedDualShot`'s precache, so both share one cache entry. The
+  tile cell also holds a placeholder while loading instead of showing an
+  empty square.
+* New `DualShotView.backAspect` for callers that already know the back
+  photo's shape: it skips the one reflow from the 3:4 placeholder. This is
+  what makes `composeDualShot`'s snapshot deterministic rather than racing
+  the decode.
+* Corrected docs that still claimed `getConcurrentCameraIds()` decides
+  simultaneous support (it is deliberately not consulted —
+  `FEATURE_CAMERA_CONCURRENT` is the Android gate) and that location falls
+  back to the last known fix (that fallback was removed in 0.6.0).
+
 ## 0.6.0
 
 * **Camera permission is now actually requested on the simultaneous path.**

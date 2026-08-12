@@ -36,8 +36,11 @@ class NativeDualPreview {
 
 /// The simultaneous capture path, which is the package's only native code.
 ///
-/// Android runs a CameraX concurrent session
-/// (`CameraManager.getConcurrentCameraIds` decides support); iOS runs an
+/// Android runs a CameraX concurrent session (the
+/// `FEATURE_CAMERA_CONCURRENT` system feature decides support — API 30+, and
+/// the same gate CameraX's concurrent binding uses; `getConcurrentCameraIds`
+/// is deliberately not consulted, as plenty of hardware that streams
+/// front+back fine returns an empty set there). iOS runs an
 /// `AVCaptureMultiCamSession` (A12 / iOS 13 and later). Each camera's preview
 /// arrives as a Flutter texture and each still is written as its own JPEG —
 /// there is no native compositor, because Dart composes the final layout so

@@ -237,6 +237,84 @@ void main() {
     expect(await layoutOf(true), await layoutOf(false));
   });
 
+  testWidgets('backAspect shapes the card on the first frame', (tester) async {
+    // What composeDualShot depends on: no waiting for the decode, so a
+    // snapshot taken one frame after mounting isn't composed against the 3:4
+    // placeholder (which cover-crops a 16:9 shot).
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DualShotView(result: result, showMap: false, backAspect: 16 / 9),
+        ),
+      ),
+    );
+
+    final back = find
+        .byWidgetPredicate((w) => w is Image && w.image is! NetworkImage)
+        .first;
+    final rect = tester.getRect(back);
+    expect(rect.width / rect.height, closeTo(16 / 9, 0.01));
+  });
+
+  testWidgets('composeDualShot writes a PNG with no result screen', (
+    tester,
+  ) async {
+    late BuildContext ctx;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) {
+            ctx = c;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    File? file;
+    Object? error;
+    final done = composeDualShot(
+      ctx,
+      result,
+      showMap: false,
+      width: 200,
+    ).then((f) => file = f, onError: (Object e) => error = e);
+
+    // The call needs both real async time (image decode, toImage) and frames
+    // (the off-screen overlay has to lay out and paint); alternate until it
+    // settles rather than assuming an order.
+    for (var i = 0; i < 40 && file == null && error == null; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await done;
+
+    expect(error, isNull);
+    expect(file, isNotNull);
+    expect(file!.lengthSync(), greaterThan(0));
+    // The off-screen card is gone again — nothing left in the overlay.
+    expect(find.byType(DualShotView), findsNothing);
+  });
+
+  testWidgets('map tile request identifies itself to OSM', (tester) async {
+    // An unidentified User-Agent is what OSM's tile policy throttles.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: DualShotView(result: result)),
+      ),
+    );
+    final tile = tester.widget<Image>(
+      find.byWidgetPredicate((w) => w is Image && w.image is NetworkImage),
+    );
+    expect(
+      (tile.image as NetworkImage).headers?['User-Agent'],
+      MapThumbnail.userAgent,
+    );
+    expect(MapThumbnail.userAgent, isNot(contains('Dart/')));
+  });
+
   test('tileUrl computes the OSM tile for a location', () {
     expect(
       MapThumbnail.tileUrl(0, 0, 0),

@@ -1,7 +1,14 @@
 import 'package:adaptive_dual_camera/adaptive_dual_camera.dart';
 import 'package:flutter/material.dart';
 
-void main() => runApp(const MyApp());
+void main() {
+  // OSM throttles tile requests that don't identify the app — set this or the
+  // map thumbnail can take seconds to appear.
+  MapThumbnail.userAgent =
+      'adaptive_dual_camera_example/0.7 '
+      '(+https://github.com/dhirajnikam/adaptive_dual_camera)';
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

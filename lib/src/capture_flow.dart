@@ -28,8 +28,9 @@ import 'support.dart';
 /// [DualShotResult.wasSimultaneous] is the only tell.
 ///
 /// Support is decided in two steps: [DualCameraSupport] asks the platform
-/// (`getConcurrentCameraIds` / `AVCaptureMultiCamSession`), and if the answer
-/// is yes the flow still confirms by opening both cameras — hardware that
+/// (`FEATURE_CAMERA_CONCURRENT` on Android, `isMultiCamSupported` on iOS),
+/// and if the answer is yes the flow still confirms by opening both cameras —
+/// hardware that
 /// advertises concurrency but drops a pipeline falls back cleanly. Devices
 /// that say no are never asked to open a second camera at all.
 ///

@@ -38,8 +38,9 @@ Galaxy S22+, …), iPhone XS / A12 and later:
 2. The back camera opens by itself, prompts *"Turn the phone around"*, counts
    down and fires — no second tap, your hands are busy.
 
-Either way, lat/long (fetched in parallel while shooting; falls back to last
-known, then to none) and a timestamp are attached, and you get one
+Either way, lat/long (fetched in parallel while shooting, and left null if no
+fix arrives — never a stale last-known one, which would stamp a location the
+photo wasn't taken at) and a timestamp are attached, and you get one
 `DualShotResult`. `result.wasSimultaneous` tells you which path ran — useful
 if your app needs the two shots to prove "same moment".
 
@@ -96,6 +97,17 @@ a single OpenStreetMap tile with a marker (`MapThumbnail`) — no maps SDK, no
 API key. Pass `showMap: false` for offline apps. Timestamps are formatted
 human-readably (`7 Aug 2026, 2:05 PM`) with no `intl` dependency.
 
+**Slow tiles?** Identify your app. OSM's tile policy throttles clients that
+don't send a real `User-Agent`, and Dart's default (`Dart/3.x (dart:io)`) is
+one of them — the single biggest reason a tile takes seconds:
+
+```dart
+void main() {
+  MapThumbnail.userAgent = 'my_app/1.4 (support@example.com)';
+  runApp(const MyApp());
+}
+```
+
 ## Usage
 
 ```dart
@@ -148,6 +160,29 @@ Every field:
 | `showMapInFooter` | `true` | Drop the map cell but keep the coordinates. |
 
 ## Saving as one image
+
+### Without a result screen
+
+`composeDualShot` renders the layout off-screen and hands you the PNG — the
+one-call default when your app just wants the finished image:
+
+```dart
+GuidedDualCaptureFlow(
+  onComplete: (result) async {
+    final file = await composeDualShot(
+      context,
+      result,
+      style: DualShotStyle.light,   // same knobs as the on-screen view
+      // showMap: false, width: 1080, pixelRatio: 3,
+    );
+  },
+)
+```
+
+It renders the same `DualShotView`, so the file matches what a result page
+would have saved. `context` must still be mounted and under a `Navigator`.
+
+### From a result screen
 
 Hand a key to `DualShotView.boundaryKey` and call `saveComposedDualShot` —
 it snapshots the card exactly (full photo + footer, no surrounding margins),
