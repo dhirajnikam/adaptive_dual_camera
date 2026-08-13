@@ -12,6 +12,13 @@
   `composedPhoto` null rather than losing the capture.
 * New `DualCaptureLabels.composing` for the extra beat this adds to the
   finishing screen.
+* Corrected docs that predated 0.5.0: the library doc and the `pubspec.yaml`
+  plugin comment still said all capture was pure Dart and the only native
+  code was a capability probe (the simultaneous path has been a native
+  session since 0.5.0). The example README still described a shutter-less
+  flow (0.6.0 added the tap to start) and a language toggle the example
+  doesn't have; the result-layout docs now say which field holds the composed
+  image.
 
 ## 0.7.0
 

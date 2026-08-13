@@ -4,6 +4,9 @@ Hands-free front + back photo capture with location and timestamp —
 **simultaneously where the hardware allows it, one after the other where it
 doesn't**, and the same result layout either way.
 
+One capture, one finished image: `result.composedPhoto` is the composed PNG
+(back photo, selfie, map, stamp), and the two raw photos come with it.
+
 Two engines, one result:
 
 | Path | Runs on | Built from |
@@ -40,9 +43,16 @@ Galaxy S22+, …), iPhone XS / A12 and later:
 
 Either way, lat/long (fetched in parallel while shooting, and left null if no
 fix arrives — never a stale last-known one, which would stamp a location the
-photo wasn't taken at) and a timestamp are attached, and you get one
-`DualShotResult`. `result.wasSimultaneous` tells you which path ran — useful
-if your app needs the two shots to prove "same moment".
+photo wasn't taken at) and a timestamp are attached, the layout is composed,
+and you get one `DualShotResult`:
+
+| Field | What it is |
+|---|---|
+| `composedPhoto` | The finished layout as one PNG — what most apps save, upload or share. Null only if you passed `compose: null` or composing failed. |
+| `backPhoto`, `frontPhoto` | The two raw camera files, always both. |
+| `latitude`, `longitude` | Null when location is off, denied or too slow — the capture still succeeds. |
+| `timestamp` | When the shot was taken. |
+| `wasSimultaneous` | Which path ran — useful if your app needs the two shots to prove "same moment". |
 
 ### How the path is chosen
 
@@ -79,7 +89,8 @@ GuidedDualCaptureFlow(
 
 ## The result layout
 
-`DualShotView` renders every result the same way, whichever path produced it:
+This is what `result.composedPhoto` contains, and what `DualShotView` renders
+on screen — the same either way, whichever path produced the photos:
 
 ```
 ┌────────────────────────────┐

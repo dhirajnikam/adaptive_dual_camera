@@ -366,10 +366,7 @@ void main() {
     );
     await flush(tester);
 
-    expect(
-      find.textContaining('Camera access is needed'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Camera access is needed'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
     expect(nativeCalls, isNot(contains('startConcurrent')));
     expect(camera.peakOpen, 0);

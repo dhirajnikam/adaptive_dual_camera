@@ -244,7 +244,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: DualShotView(result: result, showMap: false, backAspect: 16 / 9),
+          body: DualShotView(
+            result: result,
+            showMap: false,
+            backAspect: 16 / 9,
+          ),
         ),
       ),
     );

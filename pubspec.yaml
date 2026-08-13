@@ -32,8 +32,9 @@ dev_dependencies:
 flutter:
   plugin:
     platforms:
-      # The only native code in the package: a capability probe that answers
-      # "can this device run both cameras at once?". Capture stays pure Dart.
+      # The only native code in the package, and only for the simultaneous
+      # path: the "can this device run both cameras at once?" probe and the
+      # concurrent session itself. Sequential capture stays pure Dart.
       android:
         package: com.dhirajnikam.adaptive_dual_camera
         pluginClass: AdaptiveDualCameraPlugin
