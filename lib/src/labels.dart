@@ -18,6 +18,7 @@ class DualCaptureLabels {
         'This phone can\'t use both cameras at once — '
         'taking the photos one after the other',
     this.gettingLocation = 'Getting location…',
+    this.composing = 'Preparing your photo…',
     this.cameraDenied =
         'Camera access is needed to take pictures.\nPlease allow camera access and try again.',
     this.retry = 'Try again',
@@ -64,6 +65,9 @@ class DualCaptureLabels {
   final String simultaneousUnavailable;
 
   final String gettingLocation;
+
+  /// While the two photos are being composed into the final layout.
+  final String composing;
   final String cameraDenied;
   final String retry;
   final String locationUnavailable;

@@ -20,11 +20,29 @@ class DualShotResult {
     this.latitude,
     this.longitude,
     this.wasSimultaneous = false,
+    this.composedPhoto,
   });
 
   final XFile frontPhoto;
   final XFile backPhoto;
   final DateTime timestamp;
+
+  /// The finished layout as one PNG — back photo with the selfie, map and
+  /// stamp under it, exactly what [DualShotView] renders. The flow composes
+  /// it before handing the result over; null only when
+  /// [GuidedDualCaptureFlow.compose] was set to null, or composing failed
+  /// (the two photos above are still good).
+  final XFile? composedPhoto;
+
+  DualShotResult withComposed(XFile composed) => DualShotResult(
+    frontPhoto: frontPhoto,
+    backPhoto: backPhoto,
+    timestamp: timestamp,
+    latitude: latitude,
+    longitude: longitude,
+    wasSimultaneous: wasSimultaneous,
+    composedPhoto: composed,
+  );
 
   /// True when the device ran both cameras at once, so the two photos are
   /// milliseconds apart rather than seconds. Apps that need the shots to

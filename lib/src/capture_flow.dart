@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 
 import 'labels.dart';
 import 'models.dart';
+import 'result_view.dart';
 import 'support.dart';
 
 /// Hands-free two-shot capture, using both cameras at once where the hardware
@@ -26,6 +27,13 @@ import 'support.dart';
 /// the phone). [onComplete] receives the same [DualShotResult] and
 /// [DualShotView] renders it identically —
 /// [DualShotResult.wasSimultaneous] is the only tell.
+///
+/// The result carries the finished layout as one PNG
+/// ([DualShotResult.composedPhoto]): the flow composes it itself, so an app
+/// that only saves or uploads what it was handed still gets both photos, the
+/// map and the stamp rather than the back camera's shot alone. Pass
+/// [compose] to restyle it, or `compose: null` to skip it and keep the two
+/// raw photos only.
 ///
 /// Support is decided in two steps: [DualCameraSupport] asks the platform
 /// (`FEATURE_CAMERA_CONCURRENT` on Android, `isMultiCamSupported` on iOS),
@@ -59,6 +67,7 @@ class GuidedDualCaptureFlow extends StatefulWidget {
     this.labels = const DualCaptureLabels(),
     this.countdown = const Duration(seconds: 3),
     this.mode = DualCaptureMode.auto,
+    this.compose = DualShotStyle.dark,
   });
 
   final ValueChanged<DualShotResult> onComplete;
@@ -79,6 +88,11 @@ class GuidedDualCaptureFlow extends StatefulWidget {
 
   /// Override to translate or reword every user-visible string.
   final DualCaptureLabels labels;
+
+  /// Style for the finished layout the flow composes before it completes —
+  /// [DualShotResult.composedPhoto], the one image with both photos in it.
+  /// Set null to skip composing and get only the two raw photos.
+  final DualShotStyle? compose;
 
   @override
   State<GuidedDualCaptureFlow> createState() => _GuidedDualCaptureFlowState();
@@ -137,6 +151,10 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
   /// Set when the caller asked for [DualCaptureMode.auto] but this device
   /// can't deliver it — drives the one-time notice on the viewfinder.
   bool _simultaneousUnavailable = false;
+
+  /// The last step of [_Stage.finishing]: composing the layout, which is a
+  /// different wait from the location one and says so.
+  bool _composing = false;
 
   bool get _simultaneous => _stage == _Stage.bothShoot;
 
@@ -414,16 +432,37 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
     // User backed out while we waited for the fix — drop the result rather
     // than calling onComplete against a dead context.
     if (!mounted) return;
-    widget.onComplete(
-      DualShotResult(
-        frontPhoto: front,
-        backPhoto: back,
-        timestamp: DateTime.now(),
-        latitude: position?.latitude,
-        longitude: position?.longitude,
-        wasSimultaneous: simultaneous,
-      ),
+    var result = DualShotResult(
+      frontPhoto: front,
+      backPhoto: back,
+      timestamp: DateTime.now(),
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+      wasSimultaneous: simultaneous,
     );
+    final style = widget.compose;
+    if (style != null) {
+      // The layout, composed here rather than left to the caller: an app that
+      // just uses the photos it was handed shows the back camera's shot and
+      // nothing else, which is not what this package is for.
+      setState(() => _composing = true);
+      try {
+        final file = await composeDualShot(
+          context,
+          result,
+          style: style,
+          labels: widget.labels,
+        );
+        if (!mounted) return;
+        result = result.withComposed(XFile(file.path));
+      } catch (e) {
+        // Both photos are on disk — hand them over uncomposed rather than
+        // losing the capture over a snapshot.
+        _fail(e);
+        if (!mounted) return;
+      }
+    }
+    widget.onComplete(result);
   }
 
   /// Start the GPS fix if it hasn't been started yet. Called when a camera
@@ -473,7 +512,9 @@ class _GuidedDualCaptureFlowState extends State<GuidedDualCaptureFlow>
         _Stage.bothShoot ||
         _Stage.frontShoot ||
         _Stage.backShoot => _viewfinder(),
-        _Stage.finishing => _waiting(widget.labels.gettingLocation),
+        _Stage.finishing => _waiting(
+          _composing ? widget.labels.composing : widget.labels.gettingLocation,
+        ),
         _Stage.cameraDenied => _denied(),
       },
     );

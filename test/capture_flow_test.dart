@@ -204,6 +204,18 @@ void main() {
     }
   }
 
+  /// The flow composes the layout before completing, which needs real async
+  /// time (image decode, toImage) *and* frames for the off-screen card —
+  /// alternate until the result lands rather than assuming an order.
+  Future<void> settle(WidgetTester tester, bool Function() done) async {
+    for (var i = 0; i < 40 && !done(); i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+  }
+
   testWidgets('sequential hardware: one tap, then two automatic shots', (
     tester,
   ) async {
@@ -255,8 +267,12 @@ void main() {
       CameraLensDirection.front,
       CameraLensDirection.back,
     ]);
+    await settle(tester, () => result != null);
     expect(result, isNotNull);
     expect(result!.wasSimultaneous, isFalse);
+    // Out of the box the caller gets the layout, not just the back photo.
+    expect(result!.composedPhoto, isNotNull);
+    expect(File(result!.composedPhoto!.path).lengthSync(), greaterThan(0));
     expect(camera.peakOpen, 1); // never two pipelines at once
     // No location plugin under test — the capture still succeeds without one.
     expect(result!.hasLocation, isFalse);
@@ -303,6 +319,7 @@ void main() {
 
     expect(nativeCalls, contains('captureBoth'));
     expect(camera.shotLenses, isEmpty); // no plugin shutter was used
+    await settle(tester, () => result != null);
     expect(result, isNotNull);
     expect(result!.wasSimultaneous, isTrue);
     expect(result!.frontPhoto.path, endsWith('native_front.jpg'));
@@ -388,6 +405,7 @@ void main() {
       MaterialApp(
         home: GuidedDualCaptureFlow(
           countdown: const Duration(seconds: 3),
+          compose: null, // opt out: raw photos only, nothing to compose
           onComplete: (r) => result = r,
         ),
       ),
@@ -408,6 +426,7 @@ void main() {
     }
     expect(result, isNotNull);
     expect(result!.wasSimultaneous, isFalse);
+    expect(result!.composedPhoto, isNull);
     expect(camera.shotLenses, [
       CameraLensDirection.front,
       CameraLensDirection.back,

@@ -120,9 +120,20 @@ Navigator.of(context).push(MaterialPageRoute(
   ),
 ));
 
-// Display (same widget for both capture paths):
+// The finished layout, already composed as one PNG — nothing else to call:
+final file = File(result.composedPhoto!.path);
+
+// Or render it yourself (same widget for both capture paths):
 DualShotView(result: result)
 ```
+
+`result.composedPhoto` is the whole point of the flow: `result.backPhoto` on
+its own is just the back camera's shot, so the flow renders the layout — back
+photo, selfie, map, stamp — before it completes and hands you the file. Pass
+`compose: DualShotStyle.light` (or any style, see below) to change how it
+looks, or `compose: null` to skip it and keep only the two raw photos.
+A compose that fails leaves `composedPhoto` null and reports through
+`onError`; the capture itself still succeeds.
 
 ## Customizing the layout
 
@@ -161,22 +172,24 @@ Every field:
 
 ## Saving as one image
 
-### Without a result screen
+### Out of the box
 
-`composeDualShot` renders the layout off-screen and hands you the PNG — the
-one-call default when your app just wants the finished image:
+Nothing to call: `result.composedPhoto` is already the composed PNG, styled
+by the flow's `compose:` argument.
+
+### Composing one yourself
+
+`composeDualShot` renders the layout off-screen and hands you the PNG — for a
+second file at another size or style (e.g. a small one to upload), or after
+`compose: null`:
 
 ```dart
-GuidedDualCaptureFlow(
-  onComplete: (result) async {
-    final file = await composeDualShot(
-      context,
-      result,
-      style: DualShotStyle.light,   // same knobs as the on-screen view
-      // showMap: false, width: 1080, pixelRatio: 3,
-    );
-  },
-)
+final file = await composeDualShot(
+  context,
+  result,
+  style: DualShotStyle.light,   // same knobs as the on-screen view
+  // showMap: false, width: 1080, pixelRatio: 3,
+);
 ```
 
 It renders the same `DualShotView`, so the file matches what a result page

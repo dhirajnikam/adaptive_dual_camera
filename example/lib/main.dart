@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:adaptive_dual_camera/adaptive_dual_camera.dart';
 import 'package:flutter/material.dart';
 
@@ -283,6 +285,14 @@ class _ResultPageState extends State<ResultPage> {
                   ),
                 ],
               ),
+              // The flow composed this layout as one PNG before it completed —
+              // no result screen needed for the file most apps actually ship.
+              if (widget.result.composedPhoto != null)
+                Text(
+                  'Already composed: '
+                  '${widget.result.composedPhoto!.path.split(Platform.pathSeparator).last}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               const SizedBox(height: 12),
               // Customize the layout; the saved image matches the preview.
               Row(

@@ -1,3 +1,18 @@
+## 0.8.0
+
+* **The capture flow now composes the layout itself:
+  `result.composedPhoto`.** Previously `onComplete` handed back two raw
+  photos, so an app that saved or uploaded what it was given shipped the back
+  camera's shot alone — the selfie, map and timestamp only existed if the
+  caller went on to mount `DualShotView` or call `composeDualShot` itself.
+  The flow now renders the finished layout before it completes and puts the
+  PNG on the result. Pass `compose: DualShotStyle.light` (or any style) to
+  restyle it, or `compose: null` for the old behaviour — the two raw photos
+  are still on the result either way, and a failed compose leaves
+  `composedPhoto` null rather than losing the capture.
+* New `DualCaptureLabels.composing` for the extra beat this adds to the
+  finishing screen.
+
 ## 0.7.0
 
 * **New `composeDualShot(context, result)`: the composed image in one call,
