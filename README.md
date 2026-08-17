@@ -261,25 +261,45 @@ after a camera is live (the OS shows one permission dialog at a time); if
 denied or unavailable the capture still succeeds with
 `latitude`/`longitude` as `null`.
 
-Declare in your app:
+### What you must declare
+
+`CAMERA` is declared by this package's own manifest and merges into your app
+automatically. Everything else is yours to add.
 
 **Android** (`android/app/src/main/AndroidManifest.xml`):
 
 ```xml
-<uses-permission android:name="android.permission.CAMERA" />
+<!-- location stamp; geolocator declares none of these itself -->
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 <!-- for the map thumbnail -->
 <uses-permission android:name="android.permission.INTERNET" />
 ```
 
-**iOS** (`ios/Runner/Info.plist`):
+**iOS** (`ios/Runner/Info.plist`) — both are required; an app that reaches the
+camera without `NSCameraUsageDescription` is killed by the OS on the spot:
 
 ```xml
 <key>NSCameraUsageDescription</key>
 <string>Takes photos with the front and back cameras.</string>
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>Stamps each capture with its location.</string>
+```
+
+No microphone entry is needed: audio is never opened on either path.
+
+### What gets merged in that you may not want
+
+The `camera` plugin's manifest adds `RECORD_AUDIO` (and
+`WRITE_EXTERNAL_STORAGE` up to API 28) to every app that depends on it, even
+though this package always passes `enableAudio: false`. If you'd rather not
+declare a microphone permission on the store listing, strip it:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
 ```
 
 ## Old / low-end devices
