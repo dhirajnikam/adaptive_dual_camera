@@ -20,6 +20,62 @@ widget. The sequential path stays gentle on old and low-RAM phones: one
 camera open at a time, `ResolutionPreset.medium` by default, audio never
 opened.
 
+## Install
+
+```sh
+flutter pub add adaptive_dual_camera
+```
+
+| Needs | Why |
+|---|---|
+| Flutter 3.44+ | The Android plugin uses Built-in Kotlin. |
+| Android `minSdk 21` | Same floor as the `camera` plugin. Simultaneous capture itself needs API 30+ hardware that reports front+back concurrency; everything else runs sequentially. |
+| iOS 12.0+ | Simultaneous needs iOS 13+ on an A12 or later device. |
+
+Then declare the location and internet permissions your app needs — see
+[Permissions](#permissions). `CAMERA` is declared by the package itself.
+
+## Quick start
+
+```dart
+import 'dart:io';
+import 'package:adaptive_dual_camera/adaptive_dual_camera.dart';
+
+// 1. Push the flow. It takes both photos and comes back with one result.
+final result = await Navigator.of(context).push<DualShotResult>(
+  MaterialPageRoute(
+    builder: (context) => GuidedDualCaptureFlow(
+      onComplete: (result) => Navigator.of(context).pop(result),
+      onError: (e) => debugPrint('capture: $e'),
+    ),
+  ),
+);
+if (result == null) return; // user backed out
+
+// 2. The finished image — back photo, selfie, map, stamp — is already a PNG.
+final File finished = File(result.composedPhoto!.path);
+
+// 3. Or show it on screen with the same layout: DualShotView(result: result)
+```
+
+That is the whole integration. Everything below is optional tuning.
+
+## API at a glance
+
+| Symbol | What it is |
+|---|---|
+| `GuidedDualCaptureFlow` | The full-screen capture widget. `onComplete` hands back a `DualShotResult`. Knobs: `mode`, `countdown`, `resolution`, `labels`, `compose`. |
+| `DualShotResult` | `composedPhoto` (the finished PNG), `frontPhoto`, `backPhoto`, `latitude`, `longitude`, `timestamp`, `wasSimultaneous`. |
+| `DualCaptureMode` | `auto` (both cameras where possible) or `sequential` (never two at once). |
+| `DualShotView` | Renders a result as the same layout the flow composes. |
+| `DualShotStyle` | Footer size and colors for the layout. Presets `dark`, `light`, `tall`; `copyWith` for one knob. |
+| `composeDualShot(context, result)` | Renders the layout off-screen and returns a PNG `File` — for a second size or style. |
+| `saveComposedDualShot(key, result)` | Snapshots a `DualShotView` already on screen to a PNG `File`. |
+| `DualCaptureLabels` | Every user-visible string, for translation. |
+| `DualCameraSupport.supportsSimultaneousCapture()` | Ask up front whether this device can run both cameras at once. |
+| `MapThumbnail` | The OpenStreetMap tile widget used in the footer. Set `MapThumbnail.userAgent` once at startup. |
+| `ResolutionPreset`, `XFile` | Re-exported from the `camera` plugin so you need no extra import. |
+
 ## The flow
 
 One tap, no interstitial screens: the first viewfinder waits for a shutter
@@ -105,7 +161,9 @@ on screen — the same either way, whichever path produced the photos:
 
 `Column[back photo, Row[front photo, map, lat/long + timestamp]]`. The map is
 a single OpenStreetMap tile with a marker (`MapThumbnail`) — no maps SDK, no
-API key. Pass `showMap: false` for offline apps. Timestamps are formatted
+API key. For offline apps pass `showMap: false` to `DualShotView`, or
+`compose: DualShotStyle.dark.copyWith(showMapInFooter: false)` to the flow
+so the composed PNG skips it too. Timestamps are formatted
 human-readably (`7 Aug 2026, 2:05 PM`) with no `intl` dependency.
 
 **Slow tiles?** Identify your app. OSM's tile policy throttles clients that
@@ -119,24 +177,7 @@ void main() {
 }
 ```
 
-## Usage
-
-```dart
-// Capture:
-Navigator.of(context).push(MaterialPageRoute(
-  builder: (context) => GuidedDualCaptureFlow(
-    onComplete: (result) => Navigator.of(context).pop(result),
-    onError: (e) => debugPrint('$e'),
-    // resolution: ResolutionPreset.low,   // for very old devices
-  ),
-));
-
-// The finished layout, already composed as one PNG — nothing else to call:
-final file = File(result.composedPhoto!.path);
-
-// Or render it yourself (same widget for both capture paths):
-DualShotView(result: result)
-```
+## The composed photo
 
 `result.composedPhoto` is the whole point of the flow: `result.backPhoto` on
 its own is just the back camera's shot, so the flow renders the layout — back
@@ -312,7 +353,9 @@ declare a microphone permission on the store listing, strip it:
 - `enableAudio: false`, JPEG output.
 - Cameras are released when the app is backgrounded and reopened on resume;
   the countdown restarts rather than firing at a pocket.
-- Location uses `LocationAccuracy.low` with a 10-second cap.
+- Location uses `LocationAccuracy.low`. The fix starts when the first camera
+  opens and runs for up to 10 seconds; the finishing step waits at most 2 more
+  seconds before giving up and leaving lat/long null.
 - `DualShotView` decodes both photos at display size, not full camera
   resolution.
 
@@ -328,13 +371,3 @@ There is deliberately **no native compositor**. Each camera produces its own
 file, and Dart composes the final layout — which is what lets the
 simultaneous and sequential paths produce a pixel-identical result. The
 sequential path never enters native code at all.
-
-### Requirements
-
-- **Flutter 3.44+** (the Android plugin uses Built-in Kotlin).
-- **Android**: `minSdk 21`; concurrent capture itself needs API 30+ hardware
-  that reports a front+back combination. CameraX 1.4.1 is pulled in by the
-  plugin.
-- **iOS**: deployment target 12.0; simultaneous needs iOS 13+ on an A12 or
-  later device.
-

@@ -28,9 +28,9 @@ class DualShotResult {
   final DateTime timestamp;
 
   /// The finished layout as one PNG — back photo with the selfie, map and
-  /// stamp under it, exactly what [DualShotView] renders. The flow composes
+  /// stamp under it, exactly what `DualShotView` renders. The flow composes
   /// it before handing the result over; null only when
-  /// [GuidedDualCaptureFlow.compose] was set to null, or composing failed
+  /// `GuidedDualCaptureFlow.compose` was set to null, or composing failed
   /// (the two photos above are still good).
   final XFile? composedPhoto;
 

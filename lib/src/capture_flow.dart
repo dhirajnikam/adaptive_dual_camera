@@ -70,8 +70,20 @@ class GuidedDualCaptureFlow extends StatefulWidget {
     this.compose = DualShotStyle.dark,
   });
 
+  /// Called exactly once, with both photos, the location stamp and (unless
+  /// [compose] is null) the composed layout. The flow does not pop itself —
+  /// navigate away from here.
   final ValueChanged<DualShotResult> onComplete;
+
+  /// Non-fatal problems: a camera that failed to open, a shot that failed, a
+  /// compose that failed. The flow keeps going where it can (a failed compose
+  /// still completes with `composedPhoto` null). A denied camera permission
+  /// is reported here too, and the flow also shows its retry screen.
   final ValueChanged<Object>? onError;
+
+  /// Capture size for the sequential path (the `camera` plugin's preset).
+  /// [ResolutionPreset.medium] by default; pass [ResolutionPreset.low] on
+  /// very old devices. The native simultaneous session picks its own size.
   final ResolutionPreset resolution;
 
   /// Whether to try both cameras at once. See [DualCaptureMode].

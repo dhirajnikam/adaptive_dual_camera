@@ -10,6 +10,10 @@
   restyle it, or `compose: null` for the old behaviour — the two raw photos
   are still on the result either way, and a failed compose leaves
   `composedPhoto` null rather than losing the capture.
+* README now opens with Install, Quick start and an API-at-a-glance table, so
+  a first integration is one copy-paste; `GuidedDualCaptureFlow.onComplete`,
+  `onError` and `resolution` gained dartdoc; the iOS podspec no longer
+  describes the plugin as a probe with pure-Dart capture.
 * New `DualCaptureLabels.composing` for the extra beat this adds to the
   finishing screen.
 * Corrected docs that predated 0.5.0: the library doc and the `pubspec.yaml`

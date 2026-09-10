@@ -61,7 +61,7 @@ class DualCaptureLabels {
   final String openingCameras;
 
   /// Shown once, over the first viewfinder, when the app asked for
-  /// [DualCaptureMode.auto] but the device can only shoot sequentially.
+  /// `DualCaptureMode.auto` but the device can only shoot sequentially.
   final String simultaneousUnavailable;
 
   final String gettingLocation;
