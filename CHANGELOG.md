@@ -1,3 +1,9 @@
+## 0.8.1
+
+* Docs only: README install / quick start / API table and dartdoc gaps
+  filled. Example app iOS build wired for CocoaPods (deployment target 15.0).
+  No API or behaviour changes.
+
 ## 0.8.0
 
 * **The capture flow now composes the layout itself:
