@@ -1,0 +1,22 @@
+PODS:
+  - adaptive_dual_camera (0.8.0):
+    - Flutter
+  - Flutter (1.0.0)
+
+DEPENDENCIES:
+  - adaptive_dual_camera (from `.symlinks/plugins/adaptive_dual_camera/ios`)
+  - Flutter (from `Flutter`)
+
+EXTERNAL SOURCES:
+  adaptive_dual_camera:
+    :path: ".symlinks/plugins/adaptive_dual_camera/ios"
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  adaptive_dual_camera: 5936a8c4ca7bfdbe0859fa5f2f36d78cddaf48dc
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+
+PODFILE CHECKSUM: 3ba3a73b1b12adcf321a227a745625fe0888cc82
+
+COCOAPODS: 1.16.2
