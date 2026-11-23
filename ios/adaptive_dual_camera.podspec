@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'adaptive_dual_camera'
-  s.version          = '0.8.0'
+  s.version          = '0.8.2'
   s.summary          = 'Simultaneous front + back capture for adaptive_dual_camera.'
   s.description      = <<-DESC
 The package's only native code: reports whether the device can run the front

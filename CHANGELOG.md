@@ -1,3 +1,10 @@
+## 0.8.2
+
+* Verified on Flutter 3.50: the example app's Android build moves to Gradle
+  9.5.0, AGP 9.3.1 and Kotlin 2.4.20 (3.50 rejects Gradle below 9.3.1), and
+  its iOS project picks up the 3.50 tool migration. The plugin itself needed
+  no changes. No API or behaviour changes.
+
 ## 0.8.1
 
 * Docs only: README install / quick start / API table and dartdoc gaps
