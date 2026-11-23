@@ -277,12 +277,15 @@ void main() {
 
     File? file;
     Object? error;
-    final done = composeDualShot(
-      ctx,
-      result,
-      showMap: false,
-      width: 200,
-    ).then((f) => file = f, onError: (Object e) => error = e);
+    final done = composeDualShot(ctx, result, showMap: false, width: 200)
+        .then<void>(
+          (f) {
+            file = f;
+          },
+          onError: (Object e) {
+            error = e;
+          },
+        );
 
     // The call needs both real async time (image decode, toImage) and frames
     // (the off-screen overlay has to lay out and paint); alternate until it
