@@ -1,3 +1,9 @@
+## 0.8.3
+
+* iOS: Swift Package Manager support. Sources move to
+  `ios/adaptive_dual_camera/Sources/adaptive_dual_camera/` with a
+  `Package.swift`; CocoaPods keeps working. No API or behaviour changes.
+
 ## 0.8.2
 
 * Verified on Flutter 3.50: the example app's Android build moves to Gradle

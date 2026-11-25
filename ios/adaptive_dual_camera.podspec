@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'adaptive_dual_camera'
-  s.version          = '0.8.2'
+  s.version          = '0.8.3'
   s.summary          = 'Simultaneous front + back capture for adaptive_dual_camera.'
   s.description      = <<-DESC
 The package's only native code: reports whether the device can run the front
@@ -12,7 +12,7 @@ Sequential capture and the composed layout are pure Dart.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Dhiraj Nikam' => 'https://github.com/dhirajnikam' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*'
+  s.source_files     = 'adaptive_dual_camera/Sources/adaptive_dual_camera/**/*.swift'
   s.dependency 'Flutter'
   s.platform = :ios, '12.0'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
